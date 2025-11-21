@@ -44,7 +44,14 @@ class SpecificationComparator:
             messages=messages
         )
 
-        return response.choices[0].message.content
+        # Унифицируем формат возврата для совместимости с local провайдером
+        return {
+            'choices': [{
+                'message': {
+                    'content': response.choices[0].message.content
+                }
+            }]
+        }
 
     def create_analysis_prompt(self):
         return """

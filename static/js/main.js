@@ -42,11 +42,22 @@ function displayResults(result) {
     const summaryDiv = document.getElementById('summary');
     const detailsDiv = document.getElementById('details');
 
-    console.log(result)
-const rawContent = result.comparison.choices[0].message.content;
-const comparison = parseLLMJson(rawContent);
+    console.log(result);
 
-if (!comparison) return;
+    if (!result.comparison) {
+        showError('Отсутствуют данные сравнения');
+        return;
+    }
+
+    if (!result.comparison.choices || !result.comparison.choices[0]) {
+        showError('Некорректная структура данных сравнения');
+        return;
+    }
+
+    const rawContent = result.comparison.choices[0].message.content;
+    const comparison = parseLLMJson(rawContent);
+
+    if (!comparison) return;
 
 let summaryHtml = "";
 

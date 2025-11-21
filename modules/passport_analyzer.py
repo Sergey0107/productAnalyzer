@@ -48,9 +48,19 @@ class PassportAnalyzer(BaseAnalyzer):
 
             else:
 
+                file = self.client.files.create(
+                    file=open(file_path, "rb"),
+                    purpose="assistants"
+                )
+
+                file_id = file.id
+
                 messages = [{
                     "role": "user",
-                    "content": prompt
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "file", "file": {"file_id": file_id}}
+                    ]
                 }]
 
                 response = self.client.chat.completions.create(
