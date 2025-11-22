@@ -27,6 +27,14 @@
                     <small>Формат: PDF (макс. 10 MB)</small>
                 </div>
 
+                <div class="form-group">
+                    <label for="comparisonMode">Режим сравнения:</label>
+                    <select id="comparisonMode" name="comparison_mode" required>
+                        <option value="flexible">Гибкий (интуитивное сравнение характеристик)</option>
+                        <option value="strict">Строгий (точное совпадение названий)</option>
+                    </select>
+                </div>
+
                 <button type="submit" class="btn btn-primary">Анализировать</button>
             </form>
 

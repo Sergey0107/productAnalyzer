@@ -62,6 +62,7 @@ async def root():
 async def analyze_product(
     tz_file: UploadFile = File(..., description="Файл технического задания"),
     passport_file: UploadFile = File(..., description="Файл паспорта изделия"),
+    comparison_mode: str = Form("flexible", description="Режим сравнения: flexible или strict")
 ):
 
     try:
@@ -97,6 +98,7 @@ async def analyze_product(
             comparison_result = json_compare_specifications(
                 tz_data,
                 passport_data,
+                comparison_mode
             )
         except Exception as e:
             raise HTTPException(

@@ -14,6 +14,7 @@ document.getElementById('analyzeForm').addEventListener('submit', async function
         const formData = new FormData();
         formData.append('tz_file', document.getElementById('tzFile').files[0]);
         formData.append('passport_file', document.getElementById('passportFile').files[0]);
+        formData.append('comparison_mode', document.getElementById('comparisonMode').value);
 
         const response = await fetch('/api/analyze', {
             method: 'POST',
@@ -62,62 +63,57 @@ function displayResults(result) {
 let summaryHtml = "";
 
 if (comparison.matched === true) {
-    summaryHtml = `
-        <div style="font-weight: bold; color: green;">
-             Изделие соответствует ожидаемым характеристикам
-        </div>
-        <div style="margin-top: 0.5rem;">
-            <strong>Соответствующие критерии:</strong>
-            <ul>
-                ${(comparison.criteria_success || []).map(c => `<li>${c}</li>`).join("")}
-            </ul>
-        </div>
-    `;
+    summaryHtml = `<div class="summary-status matched">✓ Изделие соответствует ожидаемым характеристикам</div>`;
 } else {
-    summaryHtml = `
-        <div style="font-weight: bold; color: red;">
-             Изделие НЕ соответствует ожидаемым характеристикам
-        </div>
-
-        <div style="margin-top: 0.5rem;">
-            <strong>Не соответствуют:</strong>
-            <ul>
-                ${(comparison.criteria_error || []).map(c => `<li>${c}</li>`).join("")}
-            </ul>
-        </div>
-
-        <div style="margin-top: 0.5rem;">
-            <strong>Соответствуют:</strong>
-            <ul>
-                ${(comparison.criteria_success || []).map(c => `<li>${c}</li>`).join("")}
-            </ul>
-        </div>
-    `;
+    summaryHtml = `<div class="summary-status mismatched">✗ Изделие НЕ соответствует ожидаемым характеристикам</div>`;
 }
 
 summaryDiv.innerHTML = summaryHtml;
 
-
-    let detailsHTML = '<h3>Детали сравнения:</h3>';
+let detailsHTML = `
+    <table class="comparison-table">
+        <thead>
+            <tr>
+                <th>Характеристика</th>
+                <th>Ожидаемое (ТЗ)</th>
+                <th>Фактическое (Паспорт)</th>
+                <th>Статус</th>
+                <th>Комментарий</th>
+            </tr>
+        </thead>
+        <tbody>
+`;
 
 for (const [specName, specData] of Object.entries(comparison.details)) {
-
     let statusClass = "";
-    if (specData.status === "matched") statusClass = "matched";
-    else if (specData.status === "mismatched") statusClass = "mismatched";
-    else if (specData.status === "missing") statusClass = "missing";
+    let statusText = "";
+
+    if (specData.status === "matched") {
+        statusClass = "matched";
+        statusText = "✓ Соответствует";
+    } else if (specData.status === "mismatched") {
+        statusClass = "mismatched";
+        statusText = "✗ Не соответствует";
+    } else if (specData.status === "missing") {
+        statusClass = "missing";
+        statusText = "− Отсутствует";
+    }
 
     detailsHTML += `
-        <div class="spec-item ${statusClass}">
-            <div class="spec-name">${specName}</div>
-            <div class="spec-message">
-                <div><strong>Ожидаемое:</strong> ${specData.expected}</div>
-                <div><strong>Фактическое:</strong> ${specData.actual ?? "—"}</div>
-                <div><strong>Комментарий:</strong> ${specData.message}</div>
-            </div>
-        </div>
+        <tr class="${statusClass}">
+            <td class="spec-name">${specName}</td>
+            <td>${specData.expected}</td>
+            <td>${specData.actual ?? "—"}</td>
+            <td class="status-cell">${statusText}</td>
+            <td class="message-cell">${specData.message}</td>
+        </tr>
     `;
 }
+
+detailsHTML += `
+        </tbody>
+    </table>
+`;
 
 detailsDiv.innerHTML = detailsHTML;
 resultsDiv.classList.remove("hidden");

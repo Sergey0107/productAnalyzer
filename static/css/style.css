@@ -109,6 +109,16 @@ header h1 {
     border-color: var(--primary-color);
 }
 
+.form-group select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: white;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
 .form-group small {
     color: #6b7280;
     font-size: 0.875rem;
@@ -288,6 +298,133 @@ header h1 {
     text-decoration: underline;
 }
 
+.summary-status {
+    padding: 1rem;
+    border-radius: 4px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+}
+
+.summary-status.matched {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #86efac;
+}
+
+.summary-status.mismatched {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
+.comparison-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.comparison-table thead {
+    background: #1f2937;
+    color: white;
+}
+
+.comparison-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.comparison-table th:first-child {
+    border-top-left-radius: 8px;
+}
+
+.comparison-table th:last-child {
+    border-top-right-radius: 8px;
+}
+
+.comparison-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+    line-height: 1.5;
+}
+
+.comparison-table tbody tr {
+    transition: transform 0.2s ease;
+}
+
+.comparison-table tbody tr:hover {
+    transform: scale(1.01);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index: 1;
+}
+
+.comparison-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.comparison-table tbody tr.matched {
+    background: #f0fdf4;
+}
+
+.comparison-table tbody tr.matched:hover {
+    background: #dcfce7;
+}
+
+.comparison-table tbody tr.mismatched {
+    background: #fef2f2;
+}
+
+.comparison-table tbody tr.mismatched:hover {
+    background: #fee2e2;
+}
+
+.comparison-table tbody tr.missing {
+    background: #fef3c7;
+}
+
+.comparison-table tbody tr.missing:hover {
+    background: #fde68a;
+}
+
+.comparison-table .spec-name {
+    font-weight: 600;
+    color: #1f2937;
+    min-width: 150px;
+}
+
+.comparison-table .status-cell {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.comparison-table tr.matched .status-cell {
+    color: #15803d;
+}
+
+.comparison-table tr.mismatched .status-cell {
+    color: #991b1b;
+}
+
+.comparison-table tr.missing .status-cell {
+    color: #92400e;
+}
+
+.comparison-table .message-cell {
+    color: #4b5563;
+    font-size: 0.9rem;
+    max-width: 300px;
+}
+
 @media (max-width: 768px) {
     header h1 {
         font-size: 1.5rem;
@@ -303,5 +440,25 @@ header h1 {
 
     .upload-form {
         padding: 1rem;
+    }
+
+    .comparison-table {
+        font-size: 0.85rem;
+        display: block;
+        overflow-x: auto;
+    }
+
+    .comparison-table th {
+        padding: 0.75rem 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    .comparison-table td {
+        padding: 0.75rem 0.5rem;
+    }
+
+    .comparison-table .message-cell {
+        font-size: 0.8rem;
+        max-width: 200px;
     }
 }
