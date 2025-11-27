@@ -38,89 +38,120 @@ document.getElementById('analyzeForm').addEventListener('submit', async function
     }
 });
 
+
 function displayResults(result) {
+    console.log("RAW RESULT:", result);
+
     const resultsDiv = document.getElementById('results');
     const summaryDiv = document.getElementById('summary');
     const detailsDiv = document.getElementById('details');
+    const sourceDataDiv = document.getElementById('sourceData');
 
-    console.log(result);
 
-    if (!result.comparison) {
-        showError('Отсутствуют данные сравнения');
+    const response = result?.comparison?.response;
+
+    if (!response) {
+        showError("Отсутствуют данные LLM-ответа (result.comparison.response=null)");
         return;
     }
 
-    if (!result.comparison.choices || !result.comparison.choices[0]) {
-        showError('Некорректная структура данных сравнения');
+    const choices = response.choices;
+    if (!choices || !choices[0]) {
+        showError("Некорректная структура ответа LLM (choices пустой)");
         return;
     }
 
-    const rawContent = result.comparison.choices[0].message.content;
+    const rawContent = choices[0].message?.content;
+    if (!rawContent) {
+        showError("Ответ модели не содержит message.content");
+        return;
+    }
+
     const comparison = parseLLMJson(rawContent);
+    if (!comparison) {
+        showError("Не удалось распарсить JSON из ответа LLM");
+        return;
+    }
 
-    if (!comparison) return;
+    const originalTzData = result.tz_data;
+    const originalPassportData = result.passport_data;
 
-let summaryHtml = "";
+    let summaryHtml = comparison.matched
+        ? `<div class="summary-status matched">✓ Изделие соответствует ожидаемым характеристикам</div>`
+        : `<div class="summary-status mismatched">✗ Изделие НЕ соответствует ожидаемым характеристикам</div>`;
 
-if (comparison.matched === true) {
-    summaryHtml = `<div class="summary-status matched">✓ Изделие соответствует ожидаемым характеристикам</div>`;
-} else {
-    summaryHtml = `<div class="summary-status mismatched">✗ Изделие НЕ соответствует ожидаемым характеристикам</div>`;
-}
+    summaryDiv.innerHTML = summaryHtml;
 
-summaryDiv.innerHTML = summaryHtml;
+    let sourceDataHTML = `
+        <h3>Исходные данные</h3>
+        <div class="source-container">
 
-let detailsHTML = `
-    <table class="comparison-table">
-        <thead>
-            <tr>
-                <th>Характеристика</th>
-                <th>Ожидаемое (ТЗ)</th>
-                <th>Фактическое (Паспорт)</th>
-                <th>Статус</th>
-                <th>Комментарий</th>
+            <details class="source-block">
+                <summary>Исходный JSON ТЗ</summary>
+                <pre>${JSON.stringify(originalTzData, null, 2)}</pre>
+            </details>
+
+            <details class="source-block">
+                <summary>Исходный JSON Паспорта</summary>
+                <pre>${JSON.stringify(originalPassportData, null, 2)}</pre>
+            </details>
+
+        </div>
+        <hr>
+        <h3>Детали сравнения</h3>
+    `;
+
+    if (sourceDataDiv) {
+        sourceDataDiv.innerHTML = sourceDataHTML;
+    } else {
+        summaryDiv.insertAdjacentHTML("afterend", `<div id="sourceData">${sourceDataHTML}</div>`);
+    }
+
+    let detailsHTML = `
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Характеристика</th>
+                    <th>Ожидаемое (ТЗ)</th>
+                    <th>Фактическое (Паспорт)</th>
+                    <th>Статус</th>
+                    <th>Комментарий</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    for (const [specName, specData] of Object.entries(comparison.details)) {
+        const statuses = {
+            matched: ["matched", "✓ Соответствует"],
+            mismatched: ["mismatched", "✗ Не соответствует"],
+            missing: ["missing", "− Отсутствует"]
+        };
+
+        const [cls, text] = statuses[specData.status] || ["unknown", "?"];
+
+        detailsHTML += `
+            <tr class="${cls}">
+                <td>${specName}</td>
+                <td>${specData.expected}</td>
+                <td>${specData.actual ?? "—"}</td>
+                <td>${text}</td>
+                <td>${specData.message}</td>
             </tr>
-        </thead>
-        <tbody>
-`;
-
-for (const [specName, specData] of Object.entries(comparison.details)) {
-    let statusClass = "";
-    let statusText = "";
-
-    if (specData.status === "matched") {
-        statusClass = "matched";
-        statusText = "✓ Соответствует";
-    } else if (specData.status === "mismatched") {
-        statusClass = "mismatched";
-        statusText = "✗ Не соответствует";
-    } else if (specData.status === "missing") {
-        statusClass = "missing";
-        statusText = "− Отсутствует";
+        `;
     }
 
     detailsHTML += `
-        <tr class="${statusClass}">
-            <td class="spec-name">${specName}</td>
-            <td>${specData.expected}</td>
-            <td>${specData.actual ?? "—"}</td>
-            <td class="status-cell">${statusText}</td>
-            <td class="message-cell">${specData.message}</td>
-        </tr>
+            </tbody>
+        </table>
     `;
+
+    detailsDiv.innerHTML = detailsHTML;
+    resultsDiv.classList.remove("hidden");
+    resultsDiv.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-detailsHTML += `
-        </tbody>
-    </table>
-`;
 
-detailsDiv.innerHTML = detailsHTML;
-resultsDiv.classList.remove("hidden");
-
-resultsDiv.scrollIntoView({ behavior: "smooth", block: "nearest" });
-
-}
 
 function showError(message) {
     const resultsDiv = document.getElementById('results');
@@ -131,22 +162,32 @@ function showError(message) {
     summaryDiv.textContent = `Ошибка: ${message}`;
 
     detailsDiv.innerHTML = '';
+
+    const sourceDataDiv = document.getElementById('sourceData');
+    if (sourceDataDiv) sourceDataDiv.innerHTML = '';
+
     resultsDiv.classList.remove('hidden');
     resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+
 function parseLLMJson(content) {
     try {
+        const start = content.indexOf('{');
+        const end = content.lastIndexOf('}') + 1;
 
-        return JSON.parse(content);
+        if (start !== -1 && end > start) {
+            return JSON.parse(content.substring(start, end));
+        }
+
+        throw new Error("JSON-объект не найден.");
     } catch (e) {
         console.error("Ошибка разбора JSON:", e, content);
-        alert("Ошибка: не удалось распарсить ответ модели");
+        alert("Ошибка: не удалось распарсить ответ модели.");
         return null;
     }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('загружено');
-
 });

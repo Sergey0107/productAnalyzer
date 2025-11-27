@@ -21,6 +21,8 @@ class SpecificationComparator:
         passport_data: Dict[str, Any],
         mode: str = "flexible"
     ):
+        print(tz_data)
+        print(passport_data)
         prompt = self.create_analysis_prompt(mode)
         full_prompt = f"{prompt}\n\nТЗ:\n{tz_data}\n\nПаспорт:\n{passport_data}"
         if settings.LLM_PROVIDER == 'local':  # костыль из за lm studio (или глупого меня)
@@ -45,14 +47,16 @@ class SpecificationComparator:
             messages=messages
         )
 
-        # Унифицируем формат возврата для совместимости с local провайдером
-        return {
-            'choices': [{
-                'message': {
-                    'content': response.choices[0].message.content
-                }
-            }]
+        # Конвертируем в dict
+        response_dict = response.to_dict()
+
+        data_response = {
+            'response': response_dict,
+            'tz_data': tz_data,
+            'passport_data': passport_data
         }
+
+        return data_response
 
     def create_analysis_prompt(self, mode: str = "flexible"):
         if mode == "strict":
