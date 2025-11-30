@@ -1,22 +1,21 @@
 import shutil
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Body
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import os
-from typing import Optional, Dict, Any
 
-from modules.tz_analyzer import analyze_tz_file
-from modules.passport_analyzer import analyze_passport_file
-from modules.comparator import json_compare_specifications
+from handlers.file_handler import FileHandler
+from services.tz_analyzer import analyze_tz_file
+from services.passport_analyzer import analyze_passport_file
+from services.comparator import json_compare_specifications
 from config import settings
 
 app = FastAPI(
-    title="Product Analyze API",
+    title="Product Analyze",
     description="API для анализа соответствия изделий техническим требованиям",
-    version="1.0.0"
 )
 
 app.add_middleware(
@@ -28,19 +27,6 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-
-def save_upload_file(upload_file: UploadFile, destination: Path) -> None:
-    try:
-        with open(destination, "wb") as buffer:
-            shutil.copyfileobj(upload_file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-def validate_file(file: UploadFile) -> None:
-    pass
 
 
 # ============================================================================
@@ -66,8 +52,9 @@ async def analyze_product(
 ):
 
     try:
-        validate_file(tz_file)
-        validate_file(passport_file)
+        file_handler = FileHandler() # мб не создавать экземпляр?
+        file_handler.validate_file(tz_file)
+        file_handler.validate_file(passport_file)
 
         tz_filename = f"tz_{tz_file.filename}"
         passport_filename = f"passport_{passport_file.filename}"
@@ -75,8 +62,8 @@ async def analyze_product(
         tz_path = Path(settings.UPLOAD_DIR) / tz_filename
         passport_path = Path(settings.UPLOAD_DIR) / passport_filename
 
-        save_upload_file(tz_file, tz_path)
-        save_upload_file(passport_file, passport_path)
+        file_handler.save_upload_file(tz_file, tz_path)
+        file_handler.save_upload_file(passport_file, passport_path)
 
         try:
             tz_data = analyze_tz_file(tz_path)

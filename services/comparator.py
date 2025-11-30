@@ -3,7 +3,7 @@ from typing import Dict, Any
 import requests
 
 from config import settings
-from modules.llm_provider import LLMProvider
+from llm.llm_provider import LLMProvider
 
 
 class SpecificationComparator:

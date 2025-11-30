@@ -1,67 +1,103 @@
 import base64
 import json
-import io
 import time
-import fitz
-from pathlib import Path
-from typing import Dict, Any, Union, List, Optional
+from typing import List, Dict, Any
 
 import requests
-from PIL import Image
 
 from config import settings
-from modules.base_analyzer import BaseAnalyzer
-from modules.llm_provider import LLMProvider
+from llm.llm_provider import LLMProvider
+from services import prompts_service
 
 
-class PassportAnalyzer(BaseAnalyzer):
+class LLMService:
+    def __init__(self):
+        self.provider = LLMProvider()
+        self.client = self.provider.client
+        self.model = self.provider.model
+        self.max_tokens = self.provider.max_tokens
 
-    PAGES_PER_REQUEST: int = 1
+    def extract_characteristics_via_llm(self, input_data, prompt):
+        try:
+            if self._is_image_batch(input_data):
+                accumulated_data = {}
 
-    def __init__(self, provider, pages_per_request: int = 1):
-        super().__init__(provider)
-        self.pages_per_request = pages_per_request
+                batches = self._split_into_batches(input_data, 1)
 
-    def analyze_passport_file(self, file_path: Union[str, Path]) -> Dict[str, Any]:
+                print(f"[DEBUG] Обработка {len(batches)} батчей")
 
-        file_path = Path(file_path)
+                for batch_idx, batch in enumerate(batches):
+                    batch_start = time.time()
 
-        self._check_llm_connection()
+                    is_first_batch = (batch_idx == 0)
 
-        images = self._pdf_to_images(file_path)
+                    if is_first_batch:
+                        current_prompt = prompt
+                    else:
+                        current_prompt = prompts_service._create_passport_iterative_prompt(accumulated_data, prompt)
 
-        if not images:
-            raise ValueError("Не удалось извлечь изображения из PDF")
+                    response = self._analyze_images_batch(batch, current_prompt)
 
-        print(f"[DEBUG] PDF конвертирован: {len(images)} страниц")
+                    new_data = self._parse_json_response(response)
+                    accumulated_data = self._merge_data(accumulated_data, new_data)
+
+                    batch_elapsed = time.time() - batch_start
+                    print(f"[DEBUG] Батч {batch_idx + 1}/{len(batches)} | time={batch_elapsed:.2f}s | характеристик={len(accumulated_data)}")
+                return accumulated_data
+
+            full_prompt = f"{prompt}\n\nДанные:\n{input_data}"
+            prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
+            data_preview = str(input_data)[:100] + "..." if len(str(input_data)) > 100 else str(input_data)
+
+            if settings.LLM_PROVIDER == 'local':
+                url = str(settings.LLM_API_URL).rstrip('/') + '/chat/completions'
+                data = {
+                    'model': self.provider.model,
+                    'messages': [{
+                        "role": "user",
+                        "content": full_prompt,
+                    }]
+                }
+
+                print(f"[DEBUG] LLM запрос | model={self.provider.model} | type=text | prompt='{prompt_preview}' | data='{data_preview}'")
+
+                llm_start = time.time()
+                response = requests.post(url, json=data)
+                llm_elapsed = time.time() - llm_start
+
+                result = response.json()
+                result_str = str(result)
+                result_preview = result_str[:150] + "..." if len(result_str) > 150 else result_str
+                print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(result_str)} | preview='{result_preview}'")
+
+                return result
+
+            messages = [{
+                "role": "user",
+                "content": full_prompt
+            }]
+
+            print(f"[DEBUG] LLM запрос | model={self.model} | type=text | prompt='{prompt_preview}' | data='{data_preview}'")
+
+            llm_start = time.time()
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages
+            )
+            llm_elapsed = time.time() - llm_start
+
+            result = response.choices[0].message.content
+            result_preview = result[:150] + "..." if len(result) > 150 else result
+            print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(result)} | preview='{result_preview}'")
+
+            return result
+
+        except Exception as e:
+            raise ValueError(f"Ошибка: {str(e)}")
 
 
-        accumulated_data = {}
-
-
-        batches = self._split_into_batches(images, self.pages_per_request)
-
-        print(f"[DEBUG] Разбито на {len(batches)} батчей по {self.pages_per_request} страниц")
-
-        for batch_idx, batch in enumerate(batches):
-            print(f"[DEBUG] Обработка батча {batch_idx + 1}/{len(batches)}...")
-
-            start_time = time.time()
-
-            is_first_batch = (batch_idx == 0)
-
-            prompt = self._create_iterative_prompt(accumulated_data, is_first_batch)
-
-            response = self._analyze_images_batch(batch, prompt)
-
-            new_data = self._parse_json_response(response)
-            accumulated_data = self._merge_data(accumulated_data, new_data)
-
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print(f"[DEBUG] Батч {batch_idx + 1} обработан за {elapsed_time:.2f} сек. Найдено всего характеристик: {len(accumulated_data)}")
-
-        return accumulated_data
+    def _split_into_batches(self, items: List, batch_size: int) -> List[List]:
+        return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
 
     def _check_llm_connection(self) -> None:
         print("[DEBUG] Проверка соединения с LLM...")
@@ -132,71 +168,23 @@ class PassportAnalyzer(BaseAnalyzer):
         except Exception as e:
             raise ConnectionError(f"Не удалось подключиться к OpenAI API: {str(e)}")
 
-    def _pdf_to_images(self, file_path: Path) -> List[bytes]:
-        images = self._pdf_to_images_pymupdf(file_path)
-        return images
 
-    def _pdf_to_images_pymupdf(self, file_path: Path) -> List[bytes]:
+    def _is_image_batch(self, data):
 
-        images = []
-        doc = fitz.open(file_path)
+        if isinstance(data, list):
+            # байты изображения
+            if all(isinstance(x, (bytes, bytearray)) for x in data):
+                return True
 
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
+            # base64 изображения
+            if all(isinstance(x, str) and x.startswith("data:image") for x in data):
+                return True
 
-            mat = fitz.Matrix(1.5, 1.5)
-            pix = page.get_pixmap(matrix=mat)
+            # формат LLM image_url
+            if all(isinstance(x, dict) and "image_url" in x for x in data):
+                return True
 
-            img_bytes = self._compress_image(pix.tobytes("png"))
-            images.append(img_bytes)
-
-        doc.close()
-        return images
-
-
-    def _compress_image(self, png_bytes: bytes, max_size: int = 768, quality: int = 70) -> bytes:
-        img = Image.open(io.BytesIO(png_bytes))
-
-        if max(img.size) > max_size:
-            ratio = max_size / max(img.size)
-            new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-
-        buffer = io.BytesIO()
-        img = img.convert('RGB')
-        img.save(buffer, format='JPEG', quality=quality, optimize=True)
-
-        return buffer.getvalue()
-
-    def _split_into_batches(self, items: List, batch_size: int) -> List[List]:
-        return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
-
-    def _create_iterative_prompt(self, accumulated_data: Dict, is_first_batch: bool) -> str:
-
-        base_prompt = (
-            "Проанализируй изображения страниц технического паспорта изделия. "
-            "Извлеки все технические характеристики.\n\n"
-            "Правила:\n"
-            "- Верни данные строго в формате JSON\n"
-            "- Ключ — название характеристики (не изменяй названия)\n"
-            "- Значение — числовое или текстовое значение\n"
-            "- Сохраняй единицы измерения\n"
-            "- Если значение отсутствует — укажи null\n"
-            "- Не придумывай данные\n"
-            "- В ответе должен быть ТОЛЬКО валидный JSON"
-        )
-
-        if is_first_batch:
-            return base_prompt
-
-        return (
-            f"{base_prompt}\n\n"
-            f"Уже извлечённые характеристики из предыдущих страниц:\n"
-            f"```json\n{json.dumps(accumulated_data, ensure_ascii=False, indent=2)}\n```\n\n"
-            f"Дополни этот JSON новыми характеристиками с текущих страниц. "
-            f"Если характеристика уже есть — обнови значение только если новое более полное или точное. "
-            f"Верни полный обновлённый JSON."
-        )
+        return False
 
     def _analyze_images_batch(self, images: List[bytes], prompt: str) -> str:
 
@@ -217,7 +205,6 @@ class PassportAnalyzer(BaseAnalyzer):
             raise ValueError(f"Ошибка при анализе изображений: {str(e)}")
 
     def _analyze_local(self, images: List[bytes], prompt: str) -> str:
-
         url = str(settings.LLM_API_URL).rstrip('/') + '/chat/completions'
 
         content = []
@@ -243,11 +230,12 @@ class PassportAnalyzer(BaseAnalyzer):
 
         headers = {"Content-Type": "application/json"}
 
-        print(f"[DEBUG] Отправка запроса к {url}")
-        print(f"[DEBUG] Модель: {self.provider.model}")
-        print(f"[DEBUG] Количество изображений: {len(images)}")
+        prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
+        print(f"[DEBUG] LLM запрос | model={self.provider.model} | images={len(images)} | prompt='{prompt_preview}'")
 
+        llm_start = time.time()
         response = requests.post(url, json=data, headers=headers, timeout=300)
+        llm_elapsed = time.time() - llm_start
 
         if response.status_code != 200:
             print(f"[DEBUG] Ошибка {response.status_code}: {response.text[:500]}")
@@ -255,10 +243,14 @@ class PassportAnalyzer(BaseAnalyzer):
         response.raise_for_status()
 
         result = response.json()
-        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+        content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+
+        content_preview = content[:150] + "..." if len(content) > 150 else content
+        print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(content)} | preview='{content_preview}'")
+
+        return content
 
     def _analyze_openai(self, images: List[bytes], prompt: str) -> str:
-
         content = [{"type": "text", "text": prompt}]
 
         for img_bytes in images:
@@ -276,8 +268,19 @@ class PassportAnalyzer(BaseAnalyzer):
             "messages": [{"role": "user", "content": content}]
         }
 
+        prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
+        print(f"[DEBUG] LLM запрос | model={self.model} | images={len(images)} | prompt='{prompt_preview}'")
+
+        llm_start = time.time()
         response = self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        llm_elapsed = time.time() - llm_start
+
+        result = response.choices[0].message.content
+
+        result_preview = result[:150] + "..." if len(result) > 150 else result
+        print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(result)} | preview='{result_preview}'")
+
+        return result
 
     def _parse_json_response(self, response: str) -> Dict[str, Any]:
 
@@ -286,6 +289,7 @@ class PassportAnalyzer(BaseAnalyzer):
 
         response = response.strip()
 
+        # Убираем markdown блоки ```json ... ```
         if response.startswith('```'):
             lines = response.split('\n')
             json_lines = []
@@ -302,6 +306,7 @@ class PassportAnalyzer(BaseAnalyzer):
 
         try:
             data = json.loads(response)
+            # Если LLM вернула массив словарей, объединяем их
             if isinstance(data, list):
                 merged = {}
                 for item in data:
@@ -309,8 +314,9 @@ class PassportAnalyzer(BaseAnalyzer):
                         merged.update(item)
                 return merged
 
-            return json.loads(response)
+            return data
         except json.JSONDecodeError:
+            # Пытаемся найти JSON в тексте
             import re
             json_match = re.search(r'\{[\s\S]*\}', response)
             if json_match:
@@ -321,8 +327,8 @@ class PassportAnalyzer(BaseAnalyzer):
             return {}
 
     def _merge_data(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-        result = existing.copy()
 
+        result = existing.copy()
 
         for key, value in new.items():
             if key not in result:
@@ -341,19 +347,3 @@ class PassportAnalyzer(BaseAnalyzer):
             # В остальных случаях оставляем существующее значение
 
         return result
-
-    def analyze(self, file_path, prompt):
-        return self.analyze_passport_file(file_path)
-
-    def create_analysis_prompt(self):
-
-        return self._create_iterative_prompt({}, is_first_batch=True)
-
-
-def analyze_passport_file(
-        file_path: Union[str, Path],
-        pages_per_request: int = 1
-) -> Dict[str, Any]:
-    llm_provider = LLMProvider(settings.LLM_PROVIDER)
-    analyzer = PassportAnalyzer(llm_provider, pages_per_request=pages_per_request)
-    return analyzer.analyze_passport_file(file_path)

@@ -1,6 +1,6 @@
 from abc import abstractmethod
 
-from modules.llm_provider import LLMProvider
+from llm.llm_provider import LLMProvider
 
 
 class BaseAnalyzer:
