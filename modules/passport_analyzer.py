@@ -59,7 +59,7 @@ class PassportAnalyzer(BaseAnalyzer):
 
             end_time = time.time()
             elapsed_time = end_time - start_time
-            print(f"[DEBUG] Батч {batch_idx + 1} обработан за {elapsed_time:.2f} сек. Найдено новых характеристик: {len(accumulated_data)}")
+            print(f"[DEBUG] Батч {batch_idx + 1} обработан за {elapsed_time:.2f} сек. Найдено всего характеристик: {len(accumulated_data)}")
 
         return accumulated_data
 
