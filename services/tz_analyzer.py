@@ -10,6 +10,7 @@ from services import prompts_service
 from handlers.file_handler import FileHandler
 from services.base_analyzer import BaseAnalyzer
 from llm.llm_provider import LLMProvider
+from utils.deduplicator import deduplicate_tz_items
 
 
 class TzAnalyzer(BaseAnalyzer):
@@ -19,7 +20,12 @@ class TzAnalyzer(BaseAnalyzer):
         llm_service = LLMService()
         tz_data = file_handler.get_data_from_file(file_path)
         prompt = prompts_service.get_tz_analyze_prompt()
-        return llm_service.extract_characteristics_via_llm(tz_data, prompt)
+        result = llm_service.extract_characteristics_via_llm(tz_data, prompt)
+
+        # Пост-обработка: удаление дублирующихся позиций
+        result = deduplicate_tz_items(result)
+
+        return result
 
 
 def analyze_tz_file(file_path: Union[str, Path]) -> Dict[str, Any]:

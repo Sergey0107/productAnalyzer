@@ -1,4 +1,5 @@
 import shutil
+import time
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -12,6 +13,7 @@ from services.tz_analyzer import analyze_tz_file
 from services.passport_analyzer import analyze_passport_file
 from services.comparator import json_compare_specifications
 from config import settings
+from utils.json_flattener import flatten_json
 
 app = FastAPI(
     title="Product Analyze",
@@ -50,6 +52,7 @@ async def analyze_product(
     passport_file: UploadFile = File(..., description="Файл паспорта изделия"),
     comparison_mode: str = Form("flexible", description="Режим сравнения: flexible или strict")
 ):
+    start_time = time.time()
 
     try:
         file_handler = FileHandler() # мб не создавать экземпляр?
@@ -81,6 +84,10 @@ async def analyze_product(
                 detail=f"Ошибка при анализе паспорта: {str(e)}"
             )
 
+        # Преобразуем данные в плоский формат для корректного отображения
+        tz_data_flat = flatten_json(tz_data)
+        passport_data_flat = flatten_json(passport_data)
+
         try:
             comparison_result = json_compare_specifications(
                 tz_data,
@@ -93,11 +100,15 @@ async def analyze_product(
                 detail=f"Ошибка при сравнении характеристик: {str(e)}"
             )
 
+        end_time = time.time()
+        processing_time = round(end_time - start_time, 2)
+
         return JSONResponse(content={
             "success": True,
-            "tz_data": tz_data,
-            "passport_data": passport_data,
-            "comparison": comparison_result
+            "tz_data": tz_data_flat,  # Возвращаем плоские данные для UI
+            "passport_data": passport_data_flat,  # Возвращаем плоские данные для UI
+            "comparison": comparison_result,
+            "processing_time": processing_time  # Время обработки на сервере в секундах
         })
 
     except HTTPException:
@@ -125,3 +136,9 @@ async def analyze_product(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+# 1) плохо парсятся документы pdf в которых мелкий шрифт
+# 2) если в ТЗ есть, а в паспорте нет - что возвращаем?
+# 3) привести к единообразию json-ы
+# 4) подумать над архитектурой - экземпляры, сервисы

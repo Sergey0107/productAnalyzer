@@ -1,6 +1,7 @@
 document.getElementById('analyzeForm').addEventListener('submit', async function(e) {
     e.preventDefault();
 
+    const startTime = performance.now();
     const loadingDiv = document.getElementById('loading');
     const resultsDiv = document.getElementById('results');
     const submitBtn = this.querySelector('button[type="submit"]');
@@ -27,6 +28,10 @@ document.getElementById('analyzeForm').addEventListener('submit', async function
         }
 
         const result = await response.json();
+        const endTime = performance.now();
+        const totalTime = ((endTime - startTime) / 1000).toFixed(2);
+
+        result.totalTime = totalTime;
         displayResults(result);
 
     } catch (error) {
@@ -76,6 +81,10 @@ function displayResults(result) {
     const originalTzData = result.tz_data;
     const originalPassportData = result.passport_data;
 
+    // Получаем информацию о времени выполнения
+    const processingTime = result.processing_time || 'N/A';
+    const totalTime = result.totalTime || 'N/A';
+
     let summaryHtml = comparison.matched
         ? `<div class="summary-status matched">✓ Изделие соответствует ожидаемым характеристикам</div>`
         : `<div class="summary-status mismatched">✗ Изделие НЕ соответствует ожидаемым характеристикам</div>`;
@@ -84,6 +93,11 @@ function displayResults(result) {
 
     let sourceDataHTML = `
         <h3>Исходные данные</h3>
+        <div class="timing-info" style="margin-bottom: 15px; padding: 10px; background: #e8f5e9; border-left: 4px solid #4caf50; font-size: 0.9em;">
+            <strong>⏱ Время выполнения:</strong><br>
+            • Обработка на сервере: <strong>${processingTime} сек</strong><br>
+            • Общее время (от нажатия кнопки): <strong>${totalTime} сек</strong>
+        </div>
         <div class="source-container">
 
             <details class="source-block">
@@ -133,8 +147,8 @@ function displayResults(result) {
         detailsHTML += `
             <tr class="${cls}">
                 <td>${specName}</td>
-                <td>${specData.expected}</td>
-                <td>${specData.actual ?? "—"}</td>
+                <td>${formatValue(specData.expected)}</td>
+                <td>${formatValue(specData.actual) ?? "—"}</td>
                 <td>${text}</td>
                 <td>${specData.message}</td>
             </tr>
@@ -186,6 +200,20 @@ function parseLLMJson(content) {
         alert("Ошибка: не удалось распарсить ответ модели.");
         return null;
     }
+}
+
+
+function formatValue(value) {
+    if (value === null || value === undefined) {
+        return "null";
+    }
+    if (typeof value === 'object') {
+        if (Array.isArray(value)) {
+            return value.join('; ');
+        }
+        return JSON.stringify(value, null, 2);
+    }
+    return String(value);
 }
 
 document.addEventListener('DOMContentLoaded', function() {

@@ -66,11 +66,12 @@ class LLMService:
                 llm_elapsed = time.time() - llm_start
 
                 result = response.json()
-                result_str = str(result)
-                result_preview = result_str[:150] + "..." if len(result_str) > 150 else result_str
-                print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(result_str)} | preview='{result_preview}'")
 
-                return result
+                content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                result_preview = content[:150] + "..." if len(content) > 150 else content
+                print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(content)} | preview='{result_preview}'")
+
+                return self._parse_json_response(content)
 
             messages = [{
                 "role": "user",
@@ -90,7 +91,7 @@ class LLMService:
             result_preview = result[:150] + "..." if len(result) > 150 else result
             print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(result)} | preview='{result_preview}'")
 
-            return result
+            return self._parse_json_response(result)
 
         except Exception as e:
             raise ValueError(f"Ошибка: {str(e)}")
@@ -172,15 +173,12 @@ class LLMService:
     def _is_image_batch(self, data):
 
         if isinstance(data, list):
-            # байты изображения
             if all(isinstance(x, (bytes, bytearray)) for x in data):
                 return True
 
-            # base64 изображения
             if all(isinstance(x, str) and x.startswith("data:image") for x in data):
                 return True
 
-            # формат LLM image_url
             if all(isinstance(x, dict) and "image_url" in x for x in data):
                 return True
 
@@ -211,10 +209,12 @@ class LLMService:
 
         for img_bytes in images:
             base64_image = base64.b64encode(img_bytes).decode('utf-8')
+            # Определяем формат изображения по сигнатуре
+            image_format = "image/png" if img_bytes.startswith(b'\x89PNG') else "image/jpeg"
             content.append({
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
+                    "url": f"data:{image_format};base64,{base64_image}"
                 }
             })
 
@@ -255,11 +255,13 @@ class LLMService:
 
         for img_bytes in images:
             base64_image = base64.b64encode(img_bytes).decode('utf-8')
+
+            image_format = "image/png" if img_bytes.startswith(b'\x89PNG') else "image/jpeg"
             content.append({
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}",
-                    "detail": "high"
+                    "url": f"data:{image_format};base64,{base64_image}",
+                    "detail": "high"  # high detail для лучшего распознавания текста
                 }
             })
 
@@ -289,7 +291,6 @@ class LLMService:
 
         response = response.strip()
 
-        # Убираем markdown блоки ```json ... ```
         if response.startswith('```'):
             lines = response.split('\n')
             json_lines = []
@@ -306,7 +307,7 @@ class LLMService:
 
         try:
             data = json.loads(response)
-            # Если LLM вернула массив словарей, объединяем их
+
             if isinstance(data, list):
                 merged = {}
                 for item in data:
@@ -316,7 +317,7 @@ class LLMService:
 
             return data
         except json.JSONDecodeError:
-            # Пытаемся найти JSON в тексте
+
             import re
             json_match = re.search(r'\{[\s\S]*\}', response)
             if json_match:

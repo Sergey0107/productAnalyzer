@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 import fitz
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 from yu.extractors.csv import extract
 
 from handlers.file_handler import FileHandler
@@ -29,7 +29,7 @@ class PdfHandler(FileHandler):
         for page_num in range(total_pages):
             page = doc.load_page(page_num)
 
-            mat = fitz.Matrix(1.5, 1.5)
+            mat = fitz.Matrix(3.0, 3.0)
             pix = page.get_pixmap(matrix=mat)
 
             img_bytes = self._compress_image(pix.tobytes("png"))
@@ -42,7 +42,8 @@ class PdfHandler(FileHandler):
 
         return images
 
-    def _compress_image(self, png_bytes: bytes, max_size: int = 768, quality: int = 70) -> bytes:
+    def _compress_image(self, png_bytes: bytes, max_size: int = 2048, quality: int = 95) -> bytes:
+
         img = Image.open(io.BytesIO(png_bytes))
 
         if max(img.size) > max_size:
@@ -50,24 +51,35 @@ class PdfHandler(FileHandler):
             new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
             img = img.resize(new_size, Image.Resampling.LANCZOS)
 
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(1.5)  # 1.5x резкость
+
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.3)  # 1.3x контраст
+
+        enhancer = ImageEnhance.Brightness(img)
+        img = enhancer.enhance(1.1)  # 1.1x яркость
+
         buffer = io.BytesIO()
-        img = img.convert('RGB')
-        img.save(buffer, format='JPEG', quality=quality, optimize=True)
+
+        img.save(buffer, format='PNG', optimize=True)
 
         return buffer.getvalue()
 
-    def is_pdf_text_based(self, file_path: Path, min_text_ratio: float = 0.01) -> bool:
+    def is_pdf_text_based(self, file_path: Path) -> bool:
         doc = fitz.open(file_path)
         total_chars = 0
         total_pages = len(doc)
 
         for page in doc:
-            text = page.get_text("text")  # нативный текст
+            text = page.get_text("text")
             total_chars += len(text)
 
         doc.close()
 
-        # Если на страницу в среднем менее 20–30 символов → скорее всего скан
         avg_chars = total_chars / max(total_pages, 1)
 
         return avg_chars > 30
