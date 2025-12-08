@@ -38,22 +38,20 @@ def flatten_json(data: Dict[str, Any], parent_key: str = '', separator: str = ' 
         new_key = f"{parent_key}{separator}{key}" if parent_key else key
 
         if isinstance(value, dict):
-            # Рекурсивно обрабатываем вложенные словари
             items.extend(flatten_json(value, new_key, separator=separator).items())
         elif isinstance(value, list):
-            # Преобразуем массивы в строку с разделителями
             if all(isinstance(item, (str, int, float, bool)) for item in value):
-                # Если все элементы примитивные типы
                 items.append((new_key, '; '.join(str(item) for item in value)))
             else:
-                # Если в массиве есть словари или другие массивы
-                for idx, item in enumerate(value):
-                    if isinstance(item, dict):
-                        items.extend(flatten_json(item, f"{new_key}[{idx}]", separator=separator).items())
-                    else:
-                        items.append((f"{new_key}[{idx}]", str(item)))
+                if key == "items" and len(value) == 1 and isinstance(value[0], dict):
+                    items.extend(flatten_json(value[0], parent_key, separator=separator).items())
+                else:
+                    for idx, item in enumerate(value):
+                        if isinstance(item, dict):
+                            items.extend(flatten_json(item, f"{new_key}[{idx}]", separator=separator).items())
+                        else:
+                            items.append((f"{new_key}[{idx}]", str(item)))
         else:
-            # Простое значение
             items.append((new_key, value))
 
     return dict(items)
