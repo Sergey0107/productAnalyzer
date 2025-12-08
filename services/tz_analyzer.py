@@ -20,6 +20,7 @@ class TzAnalyzer(BaseAnalyzer):
         llm_service = LLMService()
         tz_data = file_handler.get_data_from_file(file_path)
         prompt = prompts_service.get_tz_analyze_prompt()
+        llm_service._check_llm_connection()
         result = llm_service.extract_characteristics_via_llm(tz_data, prompt)
 
         # Пост-обработка: удаление дублирующихся позиций

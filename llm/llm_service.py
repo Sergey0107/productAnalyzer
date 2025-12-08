@@ -73,6 +73,48 @@ class LLMService:
 
                 return self._parse_json_response(content)
 
+            elif settings.LLM_PROVIDER == 'openrouter':
+
+                data = {
+                    "model": self.model,
+                    "messages": [{
+                        "role": "user",
+                        "content": full_prompt
+                    }],
+                    "temperature": 0.01
+                }
+
+                headers = {
+                    "Authorization": f"Bearer {self.provider.api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "productAnalyze",
+                    "X-Title": "ProductAnalyze"
+                }
+
+                print(f"[DEBUG] LLM запрос | model={self.model} | type=text | prompt='{prompt_preview}' | data='{data_preview}'")
+
+                llm_start = time.time()
+                response = requests.post(
+                    url="https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    data=json.dumps(data),
+                    timeout=300
+                )
+                llm_elapsed = time.time() - llm_start
+
+                if response.status_code != 200:
+                    print(f"[DEBUG] Ошибка {response.status_code}: {response.text[:500]}")
+
+                response.raise_for_status()
+
+                result = response.json()
+                content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                result_preview = content[:150] + "..." if len(content) > 150 else content
+                print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(content)} | preview='{result_preview}'")
+
+                return self._parse_json_response(content)
+
+
             messages = [{
                 "role": "user",
                 "content": full_prompt
@@ -106,6 +148,8 @@ class LLMService:
         try:
             if settings.LLM_PROVIDER == 'local':
                 self._check_local_connection()
+            elif settings.LLM_PROVIDER == 'openrouter':
+                self._check_openrouter_connection()
             else:
                 self._check_openai_connection()
             print("[DEBUG]  Соединение с LLM установлено успешно")
@@ -149,6 +193,41 @@ class LLMService:
 
         raise ConnectionError(f"Не удалось подключиться к локальному LLM: {base_url}")
 
+    def _check_openrouter_connection(self) -> None:
+
+        print(f"[DEBUG] Проверка OpenRouter API...")
+        print(f"[DEBUG] Модель: {self.model}")
+
+        try:
+
+            data = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": "test"}],
+                "max_tokens": 1
+            }
+
+            headers = {
+                "Authorization": f"Bearer {self.provider.api_key}",
+            }
+
+            response = requests.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                data=json.dumps(data),
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                print(f"[DEBUG] OpenRouter API доступен")
+                print(f"[DEBUG]  Модель '{self.model}' работает корректно")
+            else:
+                raise ConnectionError(f"Ошибка {response.status_code}: {response.text[:500]}")
+
+        except requests.exceptions.RequestException as e:
+            raise ConnectionError(f"Не удалось подключиться к OpenRouter API: {str(e)}")
+        except Exception as e:
+            raise ConnectionError(f"Не удалось подключиться к OpenRouter API: {str(e)}")
+
     def _check_openai_connection(self) -> None:
 
         print(f"[DEBUG] Проверка OpenAI API...")
@@ -189,6 +268,8 @@ class LLMService:
         try:
             if settings.LLM_PROVIDER == 'local':
                 return self._analyze_local(images, prompt)
+            elif settings.LLM_PROVIDER == 'openrouter':
+                return self._analyze_openrouter(images, prompt)
             else:
                 return self._analyze_openai(images, prompt)
         except requests.exceptions.HTTPError as e:
@@ -283,6 +364,59 @@ class LLMService:
         print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(result)} | preview='{result_preview}'")
 
         return result
+
+    def _analyze_openrouter(self, images: List[bytes], prompt: str) -> str:
+
+        content = [{"type": "text", "text": prompt}]
+
+        for img_bytes in images:
+            base64_image = base64.b64encode(img_bytes).decode('utf-8')
+            image_format = "image/png" if img_bytes.startswith(b'\x89PNG') else "image/jpeg"
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image_format};base64,{base64_image}"
+                }
+            })
+
+        data = {
+            "model": self.model,
+            "messages": [{
+                "role": "user",
+                "content": content
+            }],
+            "temperature": 0.01
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self.provider.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        prompt_preview = prompt[:100] + "..." if len(prompt) > 100 else prompt
+        print(f"[DEBUG] LLM запрос | model={self.model} | images={len(images)} | prompt='{prompt_preview}'")
+
+        llm_start = time.time()
+        response = requests.post(
+            url="https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            data=json.dumps(data),
+            timeout=300
+        )
+        llm_elapsed = time.time() - llm_start
+
+        if response.status_code != 200:
+            print(f"[DEBUG] Ошибка {response.status_code}: {response.text[:500]}")
+
+        response.raise_for_status()
+
+        result = response.json()
+        content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+
+        content_preview = content[:150] + "..." if len(content) > 150 else content
+        print(f"[DEBUG] LLM ответ | time={llm_elapsed:.2f}s | length={len(content)} | preview='{content_preview}'")
+
+        return content
 
     def _parse_json_response(self, response: str) -> Dict[str, Any]:
 

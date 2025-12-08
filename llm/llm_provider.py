@@ -27,6 +27,11 @@ class LLMProvider:
                 api_key=self.api_key,
                 base_url=self.api_url
             )
+        elif self.provider == "openrouter":
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url="https://openrouter.ai/api/v1"
+            )
         else:
             self.client = OpenAI(api_key=self.api_key)
 
