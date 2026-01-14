@@ -440,6 +440,71 @@ async def create_analysis(
     })
 
 
+@app.post("/api/analysis/{analysis_id}/generate-field-verifications")
+async def generate_field_verifications(
+        request: Request,
+        analysis_id: int,
+        db=Depends(get_db)
+):
+    """Сгенерировать записи field_verifications из результатов анализа"""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "Требуется авторизация"}
+        )
+
+    # Проверяем, что анализ принадлежит пользователю
+    analysis = db.query(Analysis).filter(
+        Analysis.id == analysis_id,
+        Analysis.user_id == user.id
+    ).first()
+
+    if not analysis:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Анализ не найден"}
+        )
+
+    if not analysis.comparison_result:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "Нет результатов сравнения"}
+        )
+
+    try:
+        # Удаляем существующие записи (опционально)
+        db.query(FieldVerification).filter(
+            FieldVerification.analysis_id == analysis_id
+        ).delete()
+
+        # Парсим результаты
+        comparison_data = json.loads(analysis.comparison_result)
+
+        # Создаем новые записи
+        create_field_verifications_from_result(analysis_id, comparison_data, db)
+
+        db.commit()
+
+        # Получаем количество созданных записей
+        count = db.query(FieldVerification).filter(
+            FieldVerification.analysis_id == analysis_id
+        ).count()
+
+        return JSONResponse(content={
+            "success": True,
+            "message": f"Создано {count} записей в field_verifications",
+            "count": count
+        })
+
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": f"Ошибка создания записей: {str(e)}"}
+        )
+
+
 def process_analysis_background(analysis_id: int, tz_path: str, passport_path: str, comparison_mode: str):
     """Фоновая обработка анализа (синхронная функция)"""
     db = SessionLocal()
@@ -474,6 +539,12 @@ def process_analysis_background(analysis_id: int, tz_path: str, passport_path: s
         analysis.status = AnalysisStatus.COMPLETED
         analysis.completed_at = datetime.utcnow()
 
+        try:
+            create_field_verifications_from_result(analysis_id, comparison_result, db)
+        except Exception as e:
+            print(f"Warning: Could not create field verifications: {e}")
+            # Не прерываем выполнение из-за этой ошибки
+
         db.commit()
 
     except Exception as e:
@@ -496,6 +567,73 @@ def process_analysis_background(analysis_id: int, tz_path: str, passport_path: s
 
         db.close()
 
+
+def create_field_verifications_from_result(analysis_id: int, comparison_result: dict, db):
+    """Создает записи в field_verifications из результатов сравнения"""
+
+    # Ищем структуру с деталями сравнения
+    details = None
+
+    # Проверяем разные возможные структуры
+    if "details" in comparison_result:
+        details = comparison_result["details"]
+    elif "comparisons" in comparison_result:
+        # Если структура содержит массив comparisons
+        for item in comparison_result.get("comparisons", []):
+            field_key = item.get("key", "")
+            if field_key:
+                # Создаем запись для каждого поля
+                field_verification = FieldVerification(
+                    analysis_id=analysis_id,
+                    field_key=field_key,
+                    tz_value=str(item.get("tz_value", "")),
+                    passport_value=str(item.get("passport_value", "")),
+                    quote=item.get("quote", ""),
+                    auto_match=item.get("match", None),
+                    manual_verification=False,
+                    specialist_comment=""
+                )
+                db.add(field_verification)
+        return  # Выходим, так как обработали массив comparisons
+    elif "response" in comparison_result:
+        # Если структура содержит ответ от LLM с вложенным JSON
+        try:
+            content = comparison_result["response"]["choices"][0]["message"]["content"]
+            # Ищем JSON в тексте
+            start = content.find('```json\n')
+            end = content.find('\n```', start)
+            if start != -1 and end != -1:
+                json_str = content[start + 7:end]
+                parsed_data = json.loads(json_str)
+                details = parsed_data.get("details", {})
+        except Exception as e:
+            print(f"Error parsing LLM response: {e}")
+            return
+
+    if details:
+        # Создаем записи для каждого поля в details
+        for field_key, field_data in details.items():
+            # Определяем auto_match на основе статуса
+            auto_match = None
+            if isinstance(field_data, dict):
+                status = field_data.get("status")
+                if status == "matched":
+                    auto_match = True
+                elif status in ["mismatched", "missing"]:
+                    auto_match = False
+
+                # Создаем запись
+                field_verification = FieldVerification(
+                    analysis_id=analysis_id,
+                    field_key=field_key,
+                    tz_value=str(field_data.get("expected", "")),
+                    passport_value=str(field_data.get("actual", "")),
+                    quote=field_data.get("message", ""),
+                    auto_match=auto_match,
+                    manual_verification=False,
+                    specialist_comment=""
+                )
+                db.add(field_verification)
 
 @app.patch("/api/analysis/{analysis_id}")
 async def update_analysis(
@@ -691,6 +829,26 @@ async def get_field_verifications(
                 content={"success": False, "error": "Анализ не найден"}
             )
 
+        # Проверяем, есть ли записи в field_verifications
+        field_verifications_count = db.query(FieldVerification).filter(
+            FieldVerification.analysis_id == analysis_id
+        ).count()
+
+        # Если записей нет, но есть comparison_result - создаем их автоматически
+        if field_verifications_count == 0 and analysis.comparison_result:
+            try:
+                comparison_data = json.loads(analysis.comparison_result)
+                create_field_verifications_from_result(analysis_id, comparison_data, db)
+                db.commit()
+
+                # Обновляем счетчик
+                field_verifications_count = db.query(FieldVerification).filter(
+                    FieldVerification.analysis_id == analysis_id
+                ).count()
+            except Exception as e:
+                print(f"Warning: Could not auto-create field verifications: {e}")
+                # Продолжаем выполнение, даже если не удалось создать
+
         # Получаем все проверки полей
         field_verifications = db.query(FieldVerification).filter(
             FieldVerification.analysis_id == analysis_id
@@ -712,6 +870,8 @@ async def get_field_verifications(
 
         return JSONResponse(content={
             "success": True,
+            "analysis_id": analysis_id,
+            "total_fields": field_verifications_count,
             "field_verifications": verifications_dict
         })
 

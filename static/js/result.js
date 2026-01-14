@@ -36,6 +36,14 @@ async function loadAnalysisData() {
         }
 
         analysisData = data.analysis;
+         if (typeof analysisData.comparison_result === 'string') {
+            try {
+                analysisData.comparison_result = JSON.parse(analysisData.comparison_result);
+                console.log('Parsed comparison_result:', analysisData.comparison_result);
+            } catch (parseError) {
+                console.error('Error parsing comparison_result:', parseError);
+            }
+        }
         console.log('Analysis data:', analysisData);
 
         // Загружаем проверки полей
@@ -156,25 +164,100 @@ function displayResults() {
 
     if (!analysisData.comparison_result) {
         console.error('Нет comparison_result в данных анализа');
-        tbody.innerHTML = '<tr><td colspan="7">Нет результатов сравнения</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8">Нет результатов сравнения</td></tr>';
         return;
     }
 
-    const comparisons = analysisData.comparison_result.comparisons;
-    console.log(`Найдено ${comparisons ? comparisons.length : 0} сравнений`);
+    // Извлекаем данные сравнения
+    let comparisonData = null;
 
-    if (!comparisons || comparisons.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7">Нет данных для отображения</td></tr>';
+    try {
+        // 1. Пытаемся получить данные из response.choices[0].message.content
+        if (analysisData.comparison_result.response &&
+            analysisData.comparison_result.response.choices &&
+            analysisData.comparison_result.response.choices[0] &&
+            analysisData.comparison_result.response.choices[0].message &&
+            analysisData.comparison_result.response.choices[0].message.content) {
+
+            const content = analysisData.comparison_result.response.choices[0].message.content;
+            console.log('Извлекаем данные из content:', content.substring(0, 200) + '...');
+
+            // Извлекаем JSON из code block
+            const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+            if (jsonMatch && jsonMatch[1]) {
+                comparisonData = JSON.parse(jsonMatch[1].trim());
+                console.log('Распарсили данные из code block:', comparisonData);
+            }
+        }
+
+        // 2. Если не удалось получить из content, пробуем напрямую
+        if (!comparisonData && analysisData.comparison_result.details) {
+            comparisonData = analysisData.comparison_result;
+            console.log('Используем comparison_result напрямую');
+        }
+
+        // 3. Если все еще нет данных
+        if (!comparisonData) {
+            console.error('Не удалось извлечь данные сравнения:', analysisData.comparison_result);
+            tbody.innerHTML = '<tr><td colspan="8">Не удалось извлечь данные сравнения</td></tr>';
+            return;
+        }
+
+    } catch (e) {
+        console.error('Ошибка при обработке comparison_result:', e);
+        tbody.innerHTML = '<tr><td colspan="8">Ошибка обработки данных сравнения</td></tr>';
         return;
     }
 
-    comparisons.forEach((item, index) => {
-        console.log(`Создаем строку для поля: ${item.key}`);
-        const row = createResultRow(item, index);
+    // Проверяем наличие details
+    if (!comparisonData.details || typeof comparisonData.details !== 'object') {
+        console.error('Нет details в данных сравнения:', comparisonData);
+        tbody.innerHTML = '<tr><td colspan="8">Нет детализированных результатов сравнения</td></tr>';
+        return;
+    }
+
+    // Получаем все поля для сравнения из details
+    const fieldKeys = Object.keys(comparisonData.details);
+    console.log(`Найдено ${fieldKeys.length} полей в details:`, fieldKeys);
+
+    if (fieldKeys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8">Нет данных для отображения</td></tr>';
+        return;
+    }
+
+    // Создаем строки для каждого поля
+    fieldKeys.forEach((fieldKey, index) => {
+        const fieldData = comparisonData.details[fieldKey];
+
+        // Получаем tz_value из tz_data если нет в fieldData
+        let tzValue = fieldData.expected;
+        if (!tzValue && analysisData.comparison_result.tz_data &&
+            analysisData.comparison_result.tz_data[fieldKey]) {
+            tzValue = analysisData.comparison_result.tz_data[fieldKey];
+        }
+
+        // Получаем passport_value из passport_data если нет в fieldData
+        let passportValue = fieldData.actual;
+        if (!passportValue && analysisData.comparison_result.passport_data &&
+            analysisData.comparison_result.passport_data[fieldKey]) {
+            passportValue = analysisData.comparison_result.passport_data[fieldKey];
+        }
+
+        // Создаем объект с данными для строки в формате, ожидаемом createResultRow
+        const rowData = {
+            key: fieldKey,
+            tz_value: tzValue || null,  // expected = значение из ТЗ
+            passport_value: passportValue || null,  // actual = значение из паспорта
+            match: fieldData.status === 'matched' || fieldData.status === 'complete',  // match если status = 'matched'
+            quote: fieldData.message || ''  // message как quote
+        };
+
+        console.log(`Создаем строку для поля: ${fieldKey}`, rowData);
+        const row = createResultRow(rowData, index);
         tbody.appendChild(row);
     });
 
-    console.log(`✓ Отображено ${comparisons.length} строк в таблице`);
+    console.log(`✓ Отображено ${fieldKeys.length} строк в таблице`);
 
     // Загружаем общий комментарий
     if (analysisData.comment) {
@@ -191,6 +274,7 @@ function displayResults() {
     }
 }
 
+// Создание строки таблицы результатов
 // Создание строки таблицы результатов
 function createResultRow(item, index) {
     const row = document.createElement('tr');
@@ -283,7 +367,7 @@ function createResultRow(item, index) {
 
         const textarea = row.querySelector(`#comment_${safeFieldKey}`);
         if (textarea) {
-            textarea.addEventListener('change', () => {
+            textarea.addEventListener('input', () => { // Используем input вместо change для мгновенной реакции
                 markFieldChanged(fieldKey, index);
             });
         }
@@ -336,6 +420,7 @@ function markFieldChanged(fieldKey, index) {
 }
 
 // Сохранение проверки поля
+// Сохранение проверки поля
 async function saveFieldVerification(fieldKey, index) {
     const safeFieldKey = fieldKey.replace(/[^a-zA-Z0-9_-]/g, '_');
     const saveBtn = document.getElementById(`save_btn_${safeFieldKey}`);
@@ -365,13 +450,24 @@ async function saveFieldVerification(fieldKey, index) {
 
     // Получаем данные из существующей записи или из результатов сравнения
     const verification = fieldVerifications[fieldKey] || {};
-    const comparisonItem = analysisData.comparison_result.comparisons.find(c => c.key === fieldKey) || {};
+
+    // Получаем данные сравнения (они могут быть в строке или объекте)
+    let comparisonResult = analysisData.comparison_result;
+    if (typeof comparisonResult === 'string') {
+        try {
+            comparisonResult = JSON.parse(comparisonResult);
+        } catch (e) {
+            console.error('Ошибка парсинга comparison_result при сохранении:', e);
+        }
+    }
+
+    const comparisonItem = comparisonResult ? comparisonResult[fieldKey] || {} : {};
 
     const requestData = {
         field_key: fieldKey,
-        tz_value: verification.tz_value !== undefined ? verification.tz_value : String(comparisonItem.tz_value || ''),
-        passport_value: verification.passport_value !== undefined ? verification.passport_value : String(comparisonItem.passport_value || ''),
-        quote: verification.quote !== undefined ? verification.quote : (comparisonItem.quote || ''),
+        tz_value: verification.tz_value !== undefined ? verification.tz_value : String(comparisonItem.tz_value || comparisonItem.tz || ''),
+        passport_value: verification.passport_value !== undefined ? verification.passport_value : String(comparisonItem.passport_value || comparisonItem.passport || ''),
+        quote: verification.quote !== undefined ? verification.quote : (comparisonItem.comment || comparisonItem.quote || ''),
         auto_match: verification.auto_match !== undefined ? verification.auto_match : comparisonItem.match,
         manual_verification: manualVerification,
         specialist_comment: comment || null
@@ -444,9 +540,7 @@ async function saveFieldVerification(fieldKey, index) {
         console.error('Error saving field verification:', error);
         if (statusSpan) {
             statusSpan.textContent = 'Ошибка';
-            statusSpan.className = 'field-status';
-            statusSpan.style.backgroundColor = '#f8d7da';
-            statusSpan.style.color = '#721c24';
+            statusSpan.className = 'field-status error';
         }
         if (saveBtn) {
             saveBtn.disabled = false;
