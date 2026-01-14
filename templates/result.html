@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результат анализа</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/result.css">
+</head>
+<body>
+    <div class="page-wrapper">
+        <div class="page-header">
+            <button onclick="window.location.href='/'" class="btn-back">← Назад</button>
+            <h1 class="page-title">Результат анализа</h1>
+        </div>
+
+        <div class="container">
+            <!-- Информация об анализе -->
+            <div id="analysis-info" class="info-section"></div>
+
+            <!-- Индикатор загрузки -->
+            <div id="loading" class="loading-state">
+                <div class="spinner"></div>
+                <p>Загружаем результаты...</p>
+            </div>
+
+            <!-- Сообщение об ошибке -->
+            <div id="error-message" class="error-message hidden"></div>
+
+            <!-- Таблица результатов -->
+            <div id="results-section" class="hidden">
+                <div class="table-wrapper">
+                    <table class="results-table" id="results-table">
+                        <thead>
+                            <tr>
+                                <th>В Техническом задании</th>
+                                <th>В паспорте</th>
+                                <th>Цитата в документе</th>
+                                <th>Автоматическая проверка на соответствие</th>
+                                <th>Ручная проверка (верно/не верно)</th>
+                                <th>Комментарий специалиста</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-tbody">
+                            <!-- Строки будут добавлены через JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Панель для общего комментария -->
+                <div class="comment-panel">
+                    <h3>Общий комментарий к анализу</h3>
+                    <textarea
+                        id="general-comment"
+                        class="comment-textarea"
+                        placeholder="Введите общий комментарий по анализу..."
+                        rows="4"
+                    ></textarea>
+
+                    <div class="verification-panel">
+                        <label class="verification-label">Общая ручная проверка:</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="general-verification" value="true">
+                                <span>Верно</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="general-verification" value="false">
+                                <span>Не верно</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="general-verification" value="" checked>
+                                <span>Не указано</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button onclick="saveGeneralComment()" class="btn-save">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/result.js"></script>
+</body>
+</html>

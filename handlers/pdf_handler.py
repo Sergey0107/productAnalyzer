@@ -67,6 +67,7 @@ class PdfHandler(FileHandler):
 
         img.save(buffer, format='PNG', optimize=True)
 
+
         return buffer.getvalue()
 
     def is_pdf_text_based(self, file_path: Path) -> bool:

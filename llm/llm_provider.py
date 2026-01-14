@@ -16,6 +16,11 @@ class LLMProvider:
         self.max_tokens = settings.LLM_MAX_TOKENS
         self.api_url = settings.LLM_API_URL
 
+        if self.api_key is None:
+            print ('Тестовое исключение')
+
+
+
         if not self.api_key:
             raise ValueError(
                 f"API ключ не найден для провайдера '{self.provider}'! "

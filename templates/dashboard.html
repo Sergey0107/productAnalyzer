@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель управления - Анализ ТЗ</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <div class="page-wrapper">
+        <div class="page-header">
+            <button onclick="window.location.href='/new-analysis'" class="btn-add">Добавить</button>
+        </div>
+
+        <div class="container">
+            <div id="analyses-list" class="analyses-grid">
+                <!-- Список анализов будет загружен через JavaScript -->
+            </div>
+
+            <div id="empty-state" class="empty-state hidden">
+                <p>У вас пока нет анализов</p>
+                <button onclick="window.location.href='/new-analysis'" class="btn-primary">Создать первый анализ</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
