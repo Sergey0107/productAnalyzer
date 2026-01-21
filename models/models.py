@@ -36,24 +36,6 @@ class Analysis(Base):
     # Статус
     status = Column(Enum(AnalysisStatus), default=AnalysisStatus.PENDING)
 
-    # Результаты (JSON)
-    tz_data = Column(Text, nullable=True)
-    passport_data = Column(Text, nullable=True)
-    comparison_result = Column(Text, nullable=True)
-
-    # Общая ручная проверка и комментарий
-    manual_verification = Column(Boolean, nullable=True)
-    comment = Column(Text, nullable=True)
-
-    # Метаданные
-    processing_time = Column(Integer, nullable=True)
-    error_message = Column(Text, nullable=True)
-
-    # Временные метки
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
-
     # Связь с пользователем
     user = relationship("User", backref="analyses")
 

@@ -3,10 +3,7 @@ async function loadAnalyses() {
     try {
         const response = await fetch('/api/analyses');
         const data = await response.json();
-
-        if (!data.success) {
-            throw new Error(data.error);
-        }
+        console.log(data);
 
         const analysesList = document.getElementById('analyses-list');
         const emptyState = document.getElementById('empty-state');

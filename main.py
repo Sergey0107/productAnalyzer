@@ -1,7 +1,7 @@
 import time
 import secrets
 import json
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Response, Depends, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Response, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,9 +11,6 @@ from typing import Optional
 from datetime import datetime
 
 from handlers.file_handler import FileHandler
-from services.tz_analyzer import analyze_tz_file
-from services.passport_analyzer import analyze_passport_file
-from services.comparator import json_compare_specifications
 from config import settings
 from utils.json_flattener import flatten_json
 from db.database import engine, Base
@@ -22,12 +19,10 @@ from models.models import User, Analysis, AnalysisStatus
 from db.security import verify_password
 from models.models import FieldVerification
 from pydantic import BaseModel
-from typing import Optional
-from models.models import User, Analysis, AnalysisStatus, FieldVerification
 
-from db.security import verify_password
-from pydantic import BaseModel
-
+# Импорт Celery
+from celery_app import celery_app
+from tasks.analysis_task import process_analysis_task
 
 app = FastAPI(
     title="Product Analyze",
@@ -294,7 +289,7 @@ async def check_auth(request: Request, db=Depends(get_db)):
 
 
 # ============================================================================
-# API - УПРАВЛЕНИЕ АНАЛИЗАМИ
+# API - УПРАВЛЕНИЕ АНАЛИЗАМИ (ОБНОВЛЕНО С CELERY)
 # ============================================================================
 
 @app.get("/api/analyses")
@@ -309,7 +304,7 @@ async def get_analyses(request: Request, db=Depends(get_db)):
 
     analyses = db.query(Analysis).filter(
         Analysis.user_id == user.id
-    ).order_by(Analysis.created_at.desc()).all()
+    ).order_by(Analysis.id.desc()).all()
 
     return JSONResponse(content={
         "success": True,
@@ -320,10 +315,8 @@ async def get_analyses(request: Request, db=Depends(get_db)):
                 "passport_filename": a.passport_filename,
                 "status": a.status.value,
                 "comparison_mode": a.comparison_mode,
-                "created_at": a.created_at.isoformat() if a.created_at else None,
-                "completed_at": a.completed_at.isoformat() if a.completed_at else None,
-                "processing_time": a.processing_time,
-                "error_message": a.error_message
+                "user_id": a.user_id,
+                "celery_task_id": getattr(a, 'celery_task_id', None)
             }
             for a in analyses
         ]
@@ -331,8 +324,11 @@ async def get_analyses(request: Request, db=Depends(get_db)):
 
 
 @app.get("/api/analysis/{analysis_id}")
-async def get_analysis(request: Request, analysis_id: int, db=Depends(get_db)):
-    """Получить детальную информацию об анализе"""
+async def get_analysis(
+    analysis_id: int,
+    request: Request,
+    db=Depends(get_db)
+):
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -340,10 +336,14 @@ async def get_analysis(request: Request, analysis_id: int, db=Depends(get_db)):
             content={"success": False, "error": "Требуется авторизация"}
         )
 
-    analysis = db.query(Analysis).filter(
-        Analysis.id == analysis_id,
-        Analysis.user_id == user.id
-    ).first()
+    analysis = (
+        db.query(Analysis)
+        .filter(
+            Analysis.id == analysis_id,
+            Analysis.user_id == user.id
+        )
+        .first()
+    )
 
     if not analysis:
         return JSONResponse(
@@ -351,7 +351,26 @@ async def get_analysis(request: Request, analysis_id: int, db=Depends(get_db)):
             content={"success": False, "error": "Анализ не найден"}
         )
 
-    return JSONResponse(content={
+    fields = (
+        db.query(FieldVerification)
+        .filter(FieldVerification.analysis_id == analysis.id)
+        .order_by(FieldVerification.id)
+        .all()
+    )
+
+    field_items = []
+    for f in fields:
+        field_items.append({
+            "field_key": f.field_key,
+            "tz_value": f.tz_value,
+            "passport_value": f.passport_value,
+            "quote": f.quote,
+            "auto_match": f.auto_match,
+            "manual_verification": f.manual_verification,
+            "specialist_comment": f.specialist_comment,
+        })
+
+    return {
         "success": True,
         "analysis": {
             "id": analysis.id,
@@ -359,29 +378,20 @@ async def get_analysis(request: Request, analysis_id: int, db=Depends(get_db)):
             "passport_filename": analysis.passport_filename,
             "status": analysis.status.value,
             "comparison_mode": analysis.comparison_mode,
-            "tz_data": json.loads(analysis.tz_data) if analysis.tz_data else None,
-            "passport_data": json.loads(analysis.passport_data) if analysis.passport_data else None,
-            "comparison_result": json.loads(analysis.comparison_result) if analysis.comparison_result else None,
-            "manual_verification": analysis.manual_verification,
-            "comment": analysis.comment,
-            "processing_time": analysis.processing_time,
-            "error_message": analysis.error_message,
-            "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
-            "completed_at": analysis.completed_at.isoformat() if analysis.completed_at else None
-        }
-    })
+        },
+        "fields": field_items,
+    }
 
 
 @app.post("/api/analysis/create")
 async def create_analysis(
         request: Request,
-        background_tasks: BackgroundTasks,
         tz_file: UploadFile = File(...),
         passport_file: UploadFile = File(...),
         comparison_mode: str = Form("flexible"),
         db=Depends(get_db)
 ):
-    """Создать новый анализ"""
+    """Создать новый анализ (с Celery)"""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -424,19 +434,60 @@ async def create_analysis(
     file_handler.save_upload_file(tz_file, tz_path)
     file_handler.save_upload_file(passport_file, passport_path)
 
-    # Запускаем обработку в фоне
-    background_tasks.add_task(
-        process_analysis_background,
-        analysis.id,
-        str(tz_path),
-        str(passport_path),
-        comparison_mode
+    # Запускаем Celery задачу
+    task = process_analysis_task.apply_async(
+        args=[analysis.id, str(tz_path), str(passport_path), comparison_mode],
+        task_id=f"analysis_{analysis.id}"
     )
+
+    # Сохраняем task_id в БД (если добавите поле celery_task_id в модель)
+    # analysis.celery_task_id = task.id
+    # db.commit()
 
     return JSONResponse(content={
         "success": True,
         "analysis_id": analysis.id,
+        "task_id": task.id,
         "message": "Анализ создан и отправлен на обработку"
+    })
+
+
+@app.get("/api/analysis/{analysis_id}/status")
+async def get_analysis_task_status(
+        request: Request,
+        analysis_id: int,
+        db=Depends(get_db)
+):
+    """Получить статус Celery задачи для анализа"""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "Требуется авторизация"}
+        )
+
+    analysis = db.query(Analysis).filter(
+        Analysis.id == analysis_id,
+        Analysis.user_id == user.id
+    ).first()
+
+    if not analysis:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Анализ не найден"}
+        )
+
+    # Получаем статус задачи из Celery
+    task_id = f"analysis_{analysis_id}"
+    task_result = celery_app.AsyncResult(task_id)
+
+    return JSONResponse(content={
+        "success": True,
+        "analysis_id": analysis_id,
+        "task_id": task_id,
+        "task_state": task_result.state,
+        "task_info": task_result.info if task_result.info else {},
+        "db_status": analysis.status.value
     })
 
 
@@ -454,7 +505,6 @@ async def generate_field_verifications(
             content={"success": False, "error": "Требуется авторизация"}
         )
 
-    # Проверяем, что анализ принадлежит пользователю
     analysis = db.query(Analysis).filter(
         Analysis.id == analysis_id,
         Analysis.user_id == user.id
@@ -473,20 +523,17 @@ async def generate_field_verifications(
         )
 
     try:
-        # Удаляем существующие записи (опционально)
+        from tasks.analysis_task import create_field_verifications_from_result
+
         db.query(FieldVerification).filter(
             FieldVerification.analysis_id == analysis_id
         ).delete()
 
-        # Парсим результаты
         comparison_data = json.loads(analysis.comparison_result)
-
-        # Создаем новые записи
         create_field_verifications_from_result(analysis_id, comparison_data, db)
 
         db.commit()
 
-        # Получаем количество созданных записей
         count = db.query(FieldVerification).filter(
             FieldVerification.analysis_id == analysis_id
         ).count()
@@ -504,136 +551,6 @@ async def generate_field_verifications(
             content={"success": False, "error": f"Ошибка создания записей: {str(e)}"}
         )
 
-
-def process_analysis_background(analysis_id: int, tz_path: str, passport_path: str, comparison_mode: str):
-    """Фоновая обработка анализа (синхронная функция)"""
-    db = SessionLocal()
-    start_time = time.time()
-
-    try:
-        analysis = db.query(Analysis).filter(Analysis.id == analysis_id).first()
-        if not analysis:
-            return
-
-        # Анализ файлов
-        tz_data = analyze_tz_file(Path(tz_path))
-        passport_data = analyze_passport_file(Path(passport_path))
-
-        tz_data_flat = flatten_json(tz_data)
-        passport_data_flat = flatten_json(passport_data)
-
-        comparison_result = json_compare_specifications(
-            tz_data,
-            passport_data,
-            comparison_mode
-        )
-
-        # Обновляем результаты
-        end_time = time.time()
-        processing_time = int(end_time - start_time)
-
-        analysis.tz_data = json.dumps(tz_data_flat, ensure_ascii=False)
-        analysis.passport_data = json.dumps(passport_data_flat, ensure_ascii=False)
-        analysis.comparison_result = json.dumps(comparison_result, ensure_ascii=False)
-        analysis.processing_time = processing_time
-        analysis.status = AnalysisStatus.COMPLETED
-        analysis.completed_at = datetime.utcnow()
-
-        try:
-            create_field_verifications_from_result(analysis_id, comparison_result, db)
-        except Exception as e:
-            print(f"Warning: Could not create field verifications: {e}")
-            # Не прерываем выполнение из-за этой ошибки
-
-        db.commit()
-
-    except Exception as e:
-        # Обработка ошибок
-        analysis = db.query(Analysis).filter(Analysis.id == analysis_id).first()
-        if analysis:
-            analysis.status = AnalysisStatus.FAILED
-            analysis.error_message = str(e)
-            db.commit()
-
-    finally:
-        # Очистка файлов
-        try:
-            if os.path.exists(tz_path):
-                os.remove(tz_path)
-            if os.path.exists(passport_path):
-                os.remove(passport_path)
-        except Exception:
-            pass
-
-        db.close()
-
-
-def create_field_verifications_from_result(analysis_id: int, comparison_result: dict, db):
-    """Создает записи в field_verifications из результатов сравнения"""
-
-    # Ищем структуру с деталями сравнения
-    details = None
-
-    # Проверяем разные возможные структуры
-    if "details" in comparison_result:
-        details = comparison_result["details"]
-    elif "comparisons" in comparison_result:
-        # Если структура содержит массив comparisons
-        for item in comparison_result.get("comparisons", []):
-            field_key = item.get("key", "")
-            if field_key:
-                # Создаем запись для каждого поля
-                field_verification = FieldVerification(
-                    analysis_id=analysis_id,
-                    field_key=field_key,
-                    tz_value=str(item.get("tz_value", "")),
-                    passport_value=str(item.get("passport_value", "")),
-                    quote=item.get("quote", ""),
-                    auto_match=item.get("match", None),
-                    manual_verification=False,
-                    specialist_comment=""
-                )
-                db.add(field_verification)
-        return  # Выходим, так как обработали массив comparisons
-    elif "response" in comparison_result:
-        # Если структура содержит ответ от LLM с вложенным JSON
-        try:
-            content = comparison_result["response"]["choices"][0]["message"]["content"]
-            # Ищем JSON в тексте
-            start = content.find('```json\n')
-            end = content.find('\n```', start)
-            if start != -1 and end != -1:
-                json_str = content[start + 7:end]
-                parsed_data = json.loads(json_str)
-                details = parsed_data.get("details", {})
-        except Exception as e:
-            print(f"Error parsing LLM response: {e}")
-            return
-
-    if details:
-        # Создаем записи для каждого поля в details
-        for field_key, field_data in details.items():
-            # Определяем auto_match на основе статуса
-            auto_match = None
-            if isinstance(field_data, dict):
-                status = field_data.get("status")
-                if status == "matched":
-                    auto_match = True
-                elif status in ["mismatched", "missing"]:
-                    auto_match = False
-
-                # Создаем запись
-                field_verification = FieldVerification(
-                    analysis_id=analysis_id,
-                    field_key=field_key,
-                    tz_value=str(field_data.get("expected", "")),
-                    passport_value=str(field_data.get("actual", "")),
-                    quote=field_data.get("message", ""),
-                    auto_match=auto_match,
-                    manual_verification=False,
-                    specialist_comment=""
-                )
-                db.add(field_verification)
 
 @app.patch("/api/analysis/{analysis_id}")
 async def update_analysis(
@@ -662,7 +579,6 @@ async def update_analysis(
             content={"success": False, "error": "Анализ не найден"}
         )
 
-    # Обновляем поля
     if manual_verification is not None:
         analysis.manual_verification = manual_verification
 
@@ -735,7 +651,6 @@ async def update_field_verification(
             content={"success": False, "error": "Требуется авторизация"}
         )
 
-    # Проверяем, что анализ принадлежит пользователю
     analysis = db.query(Analysis).filter(
         Analysis.id == analysis_id,
         Analysis.user_id == user.id
@@ -747,14 +662,12 @@ async def update_field_verification(
             content={"success": False, "error": "Анализ не найден"}
         )
 
-    # Ищем существующую проверку поля
     field_verification = db.query(FieldVerification).filter(
         FieldVerification.analysis_id == analysis_id,
         FieldVerification.field_key == data.field_key
     ).first()
 
     if field_verification:
-        # Обновляем существующую запись
         if data.tz_value is not None:
             field_verification.tz_value = data.tz_value
         if data.passport_value is not None:
@@ -769,7 +682,6 @@ async def update_field_verification(
             field_verification.specialist_comment = data.specialist_comment
         field_verification.updated_at = datetime.utcnow()
     else:
-        # Создаем новую запись
         field_verification = FieldVerification(
             analysis_id=analysis_id,
             field_key=data.field_key,
@@ -804,85 +716,61 @@ async def update_field_verification(
 
 @app.get("/api/analysis/{analysis_id}/field-verifications")
 async def get_field_verifications(
-        request: Request,
-        analysis_id: int,
-        db=Depends(get_db)
+    request: Request,
+    analysis_id: int,
+    db=Depends(get_db)
 ):
     """Получить все проверки полей для анализа"""
-    try:
-        user = get_current_user(request, db)
-        if not user:
-            return JSONResponse(
-                status_code=401,
-                content={"success": False, "error": "Требуется авторизация"}
-            )
 
-        # Проверяем, что анализ принадлежит пользователю
-        analysis = db.query(Analysis).filter(
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "Требуется авторизация"}
+        )
+
+    analysis = (
+        db.query(Analysis)
+        .filter(
             Analysis.id == analysis_id,
             Analysis.user_id == user.id
-        ).first()
+        )
+        .first()
+    )
 
-        if not analysis:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "error": "Анализ не найден"}
-            )
+    if not analysis:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Анализ не найден"}
+        )
 
-        # Проверяем, есть ли записи в field_verifications
-        field_verifications_count = db.query(FieldVerification).filter(
-            FieldVerification.analysis_id == analysis_id
-        ).count()
+    field_verifications = (
+        db.query(FieldVerification)
+        .filter(FieldVerification.analysis_id == analysis_id)
+        .order_by(FieldVerification.id)
+        .all()
+    )
 
-        # Если записей нет, но есть comparison_result - создаем их автоматически
-        if field_verifications_count == 0 and analysis.comparison_result:
-            try:
-                comparison_data = json.loads(analysis.comparison_result)
-                create_field_verifications_from_result(analysis_id, comparison_data, db)
-                db.commit()
-
-                # Обновляем счетчик
-                field_verifications_count = db.query(FieldVerification).filter(
-                    FieldVerification.analysis_id == analysis_id
-                ).count()
-            except Exception as e:
-                print(f"Warning: Could not auto-create field verifications: {e}")
-                # Продолжаем выполнение, даже если не удалось создать
-
-        # Получаем все проверки полей
-        field_verifications = db.query(FieldVerification).filter(
-            FieldVerification.analysis_id == analysis_id
-        ).all()
-
-        # Формируем словарь для быстрого доступа
-        verifications_dict = {}
-        for fv in field_verifications:
-            verifications_dict[fv.field_key] = {
-                "id": fv.id,
-                "tz_value": fv.tz_value,
-                "passport_value": fv.passport_value,
-                "quote": fv.quote,
-                "auto_match": fv.auto_match,
-                "manual_verification": fv.manual_verification,
-                "specialist_comment": fv.specialist_comment,
-                "updated_at": fv.updated_at.isoformat() if fv.updated_at else None
-            }
-
-        return JSONResponse(content={
-            "success": True,
-            "analysis_id": analysis_id,
-            "total_fields": field_verifications_count,
-            "field_verifications": verifications_dict
+    items = []
+    for fv in field_verifications:
+        items.append({
+            "id": fv.id,
+            "field_key": fv.field_key,
+            "tz_value": fv.tz_value,
+            "passport_value": fv.passport_value,
+            "quote": fv.quote,
+            "auto_match": fv.auto_match,
+            "manual_verification": fv.manual_verification,
+            "specialist_comment": fv.specialist_comment,
+            "updated_at": fv.updated_at.isoformat() if fv.updated_at else None,
         })
 
-    except Exception as e:
-        print(f"Error in get_field_verifications: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": f"Ошибка сервера: {str(e)}"}
-        )
+    return {
+        "success": True,
+        "analysis_id": analysis_id,
+        "total_fields": len(items),
+        "field_verifications": items,
+    }
 
 
 @app.post("/api/analysis/{analysis_id}/save-all-fields")
@@ -899,7 +787,6 @@ async def save_all_field_verifications(
             content={"success": False, "error": "Требуется авторизация"}
         )
 
-    # Проверяем, что анализ принадлежит пользователю
     analysis = db.query(Analysis).filter(
         Analysis.id == analysis_id,
         Analysis.user_id == user.id
@@ -928,14 +815,12 @@ async def save_all_field_verifications(
             if not field_key:
                 continue
 
-            # Проверяем, существует ли уже запись
             existing = db.query(FieldVerification).filter(
                 FieldVerification.analysis_id == analysis_id,
                 FieldVerification.field_key == field_key
             ).first()
 
             if not existing:
-                # Создаем новую запись только если её нет
                 field_verification = FieldVerification(
                     analysis_id=analysis_id,
                     field_key=field_key,
@@ -961,6 +846,8 @@ async def save_all_field_verifications(
             status_code=500,
             content={"success": False, "error": f"Ошибка сохранения: {str(e)}"}
         )
+
+
 # ============================================================================
 # ДОПОЛНИТЕЛЬНЫЕ СЕРВИСНЫЕ ЭНДПОИНТЫ
 # ============================================================================
@@ -968,7 +855,19 @@ async def save_all_field_verifications(
 @app.get("/health")
 async def health_check():
     """Проверка работоспособности сервера"""
-    return {"status": "ok", "timestamp": time.time()}
+    # Проверяем подключение к Redis/Celery
+    try:
+        celery_inspect = celery_app.control.inspect()
+        active_workers = celery_inspect.active()
+        redis_available = active_workers is not None
+    except Exception:
+        redis_available = False
+
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "redis_connected": redis_available
+    }
 
 
 @app.get("/api/user")

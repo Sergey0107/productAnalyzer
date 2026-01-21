@@ -1,12 +1,305 @@
-version: '3.8'
-
 services:
-  app:
-    build: .
+  # ==============================================
+  # POSTGRESQL
+  # ==============================================
+  db:
+    image: postgres:15-alpine
+    container_name: product_analyze_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "8000:8000"
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app_network
+
+  # ==============================================
+  # REDIS
+  # ==============================================
+  redis:
+    image: redis:7-alpine
+    container_name: product_analyze_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app_network
+
+  # ==============================================
+  # FASTAPI
+  # ==============================================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: product_analyze_web
+    restart: unless-stopped
+    command: >
+      sh -c '
+      echo "Waiting for dependencies..."
+      python -c "
+      import time
+      import socket
+      import os
+      
+      def wait_for_port(host, port, timeout=60):
+          start_time = time.time()
+          while time.time() - start_time < timeout:
+              try:
+                  sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                  sock.settimeout(1)
+                  result = sock.connect_ex((host, port))
+                  sock.close()
+                  if result == 0:
+                      print(f\"✓ {host}:{port} is available\")
+                      return True
+              except Exception:
+                  pass
+              time.sleep(2)
+          return False
+      
+      db_host = os.getenv(\"POSTGRES_HOST\", \"db\")
+      db_port = int(os.getenv(\"POSTGRES_PORT\", 5432))
+      
+      if wait_for_port(db_host, db_port):
+          print(\"All dependencies are ready!\")
+      else:
+          print(\"Timeout waiting for PostgreSQL\")
+          exit(1)
+      "
+      
+      uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      '
     volumes:
       - .:/app
+      - uploads_data:/app/uploads
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - PYTHONUNBUFFERED=1
+      PYTHONPATH: /app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app_network
+
+  # ==============================================
+  # CELERY WORKER
+  # ==============================================
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: product_analyze_celery_worker
     restart: unless-stopped
+    command: >
+      sh -c '
+      echo "Waiting for dependencies..."
+      python -c "
+      import time
+      import socket
+      import os
+      
+      def wait_for_port(host, port, timeout=60):
+          start_time = time.time()
+          while time.time() - start_time < timeout:
+              try:
+                  sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                  sock.settimeout(1)
+                  result = sock.connect_ex((host, port))
+                  sock.close()
+                  if result == 0:
+                      print(f\"✓ {host}:{port} is available\")
+                      return True
+              except Exception:
+                  pass
+              time.sleep(2)
+          return False
+      
+      redis_host = os.getenv(\"REDIS_HOST\", \"redis\")
+      redis_port = int(os.getenv(\"REDIS_PORT\", 6379))
+      db_host = os.getenv(\"POSTGRES_HOST\", \"db\")
+      db_port = int(os.getenv(\"POSTGRES_PORT\", 5432))
+      
+      redis_ready = wait_for_port(redis_host, redis_port)
+      db_ready = wait_for_port(db_host, db_port)
+      
+      if redis_ready and db_ready:
+          print(\"All dependencies are ready!\")
+      else:
+          print(\"Timeout waiting for dependencies\")
+          exit(1)
+      "
+      
+      celery -A celery_app worker --loglevel=info --concurrency=4
+      '
+    volumes:
+      - .:/app
+      - uploads_data:/app/uploads
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  # ==============================================
+  # CELERY BEAT
+  # ==============================================
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: product_analyze_celery_beat
+    restart: unless-stopped
+    command: >
+      sh -c '
+      echo "Waiting for Redis..."
+      python -c "
+      import time
+      import socket
+      
+      def wait_for_port(host, port, timeout=60):
+          start_time = time.time()
+          while time.time() - start_time < timeout:
+              try:
+                  sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                  sock.settimeout(1)
+                  result = sock.connect_ex((host, port))
+                  sock.close()
+                  if result == 0:
+                      print(f\"✓ {host}:{port} is available\")
+                      return True
+              except Exception:
+                  pass
+              time.sleep(2)
+          return False
+      
+      if wait_for_port(\"redis\", 6379):
+          print(\"Redis is ready!\")
+      else:
+          print(\"Timeout waiting for Redis\")
+          exit(1)
+      "
+      
+      mkdir -p /app/celery_data
+      celery -A celery_app beat --loglevel=info --schedule=/app/celery_data/celerybeat-schedule
+      '
+    volumes:
+      - .:/app
+      - celery_data:/app/celery_data
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  # ==============================================
+  # FLOWER
+  # ==============================================
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: product_analyze_flower
+    restart: unless-stopped
+    command: >
+      sh -c '
+      echo "Waiting for Redis..."
+      python -c "
+      import time
+      import socket
+      
+      def wait_for_port(host, port, timeout=60):
+          start_time = time.time()
+          while time.time() - start_time < timeout:
+              try:
+                  sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                  sock.settimeout(1)
+                  result = sock.connect_ex((host, port))
+                  sock.close()
+                  if result == 0:
+                      print(f\"✓ {host}:{port} is available\")
+                      return True
+              except Exception:
+                  pass
+              time.sleep(2)
+          return False
+      
+      if wait_for_port(\"redis\", 6379):
+          print(\"Redis is ready!\")
+      else:
+          print(\"Timeout waiting for Redis\")
+          exit(1)
+      "
+      
+      celery -A celery_app flower --port=5555
+      '
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+    networks:
+      - app_network
+
+# ==============================================
+# VOLUMES
+# ==============================================
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+  celery_data:
+
+# ==============================================
+# NETWORK
+# ==============================================
+networks:
+  app_network:
+    driver: bridge
