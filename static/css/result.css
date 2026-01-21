@@ -1,4 +1,5 @@
-/* Общая структура */
+
+/* --- ТВОЙ CSS --- */
 .page-wrapper {
     min-height: 100vh;
     background-color: #f5f5f5;
@@ -112,7 +113,7 @@
     margin-bottom: 1rem;
 }
 
-/* Таблица результатов - растягиваем на всю ширину */
+/* Таблица результатов */
 .table-wrapper {
     background-color: white;
     border: 1px solid #e0e0e0;
@@ -292,6 +293,7 @@
     display: flex;
     gap: 0.5rem;
     align-items: center;
+    justify-content: center; /* Центрируем кнопку в колонке */
 }
 
 /* Модальное окно для комментария */
@@ -437,108 +439,7 @@
     background-color: #1565c0;
 }
 
-/* Подсказка для кнопки комментария */
-.comment-tooltip {
-    position: relative;
-    display: inline-block;
-}
-
-.comment-tooltip .tooltip-text {
-    visibility: hidden;
-    background-color: #333;
-    color: #fff;
-    text-align: center;
-    padding: 0.3rem 0.6rem;
-    border-radius: 3px;
-    font-size: 0.8rem;
-    position: absolute;
-    z-index: 1;
-    bottom: 125%;
-    left: 50%;
-    transform: translateX(-50%);
-    white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-
-.comment-tooltip:hover .tooltip-text {
-    visibility: visible;
-    opacity: 1;
-}
-
 /* Утилиты */
 .hidden {
     display: none !important;
-}
-
-/* Адаптивность */
-@media (max-width: 1200px) {
-    .container {
-        padding: 1rem;
-    }
-
-    .results-table {
-        font-size: 0.85rem;
-    }
-
-    .results-table th,
-    .results-table td {
-        padding: 0.75rem 0.5rem;
-    }
-}
-
-@media (max-width: 992px) {
-    .info-section {
-        grid-template-columns: 1fr;
-    }
-
-    .info-field {
-        flex-direction: column;
-        gap: 0.2rem;
-    }
-
-    .info-label {
-        min-width: auto;
-    }
-}
-
-@media (max-width: 768px) {
-    .page-header {
-        padding: 1rem;
-    }
-
-    .container {
-        padding: 1rem;
-    }
-
-    .table-wrapper {
-        border-radius: 0;
-        border-left: none;
-        border-right: none;
-    }
-
-    .action-cell {
-        flex-direction: column;
-        gap: 0.3rem;
-    }
-
-    .btn-comment, .btn-save-field {
-        width: 100%;
-        justify-content: center;
-    }
-
-    .modal-content {
-        margin: 1rem;
-        max-height: 80vh;
-    }
-}
-
-@media (max-width: 576px) {
-    .modal-footer {
-        flex-direction: column;
-    }
-
-    .btn-modal-cancel, .btn-modal-save {
-        width: 100%;
-    }
 }

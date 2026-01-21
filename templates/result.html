@@ -4,8 +4,299 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Результат анализа</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="stylesheet" href="/static/css/result.css">
+    <!-- Иконки -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* --- СТИЛИ --- */
+        .page-wrapper {
+            min-height: 100vh;
+            background-color: #f5f5f5;
+            padding: 0;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        .page-header {
+            background-color: white;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .btn-back {
+            background-color: #e0e0e0;
+            color: #333;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+
+        .btn-back:hover {
+            background-color: #d0d0d0;
+        }
+
+        .page-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            margin: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+
+        /* Инфо секция */
+        .info-section {
+            background-color: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        /* Статусы */
+        .status-pending { color: #f57c00; }
+        .status-processing { color: #1976d2; }
+        .status-completed { color: #388e3c; }
+        .status-failed { color: #d32f2f; }
+
+        /* Таблица */
+        .table-wrapper {
+            background-color: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            width: 100%;
+        }
+
+        .results-table {
+            width: 100%;
+            min-width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            table-layout: fixed;
+        }
+
+        .results-table thead {
+            background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .results-table th {
+            padding: 1rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #e0e0e0;
+            white-space: nowrap;
+        }
+
+        /* Ширины колонок */
+        .results-table th:nth-child(1) { width: 15%; }
+        .results-table th:nth-child(2) { width: 12%; }
+        .results-table th:nth-child(3) { width: 12%; }
+        .results-table th:nth-child(4) { width: 20%; }
+        .results-table th:nth-child(5) { width: 12%; }
+        .results-table th:nth-child(6) { width: 12%; } /* Ручная проверка (радио) */
+        .results-table th:nth-child(7) { width: 10%; } /* Комментарий */
+        .results-table th:nth-child(8) { width: 7%; }  /* Кнопка */
+
+        .results-table td {
+            padding: 0.8rem 0.75rem;
+            border-bottom: 1px solid #e0e0e0;
+            vertical-align: top;
+            word-wrap: break-word;
+        }
+
+        .results-table tbody tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        /* Ячейки */
+        .cell-quote {
+            font-size: 0.85rem;
+            color: #555;
+            font-style: italic;
+        }
+
+        /* Ручная проверка (Радио) */
+        .radio-group label {
+            cursor: pointer;
+            margin-right: 10px;
+            font-size: 1.1rem;
+            user-select: none;
+        }
+        .radio-group label:hover { opacity: 0.7; }
+
+        /* Кнопка комментария */
+        .btn-comment {
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            color: #666;
+            border-radius: 4px;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            white-space: nowrap;
+            width: fit-content;
+        }
+
+        .btn-comment:hover {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-comment.has-comment {
+            background-color: #e3f2fd;
+            border-color: #1976d2;
+            color: #1976d2;
+        }
+
+        /* Кнопка Сохранить */
+        .btn-save {
+            padding: 0.4rem 0.8rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: white;
+            background-color: #ccc; /* Disabled by default */
+            transition: background-color 0.2s;
+        }
+
+        .btn-save:disabled {
+            background-color: #e0e0e0;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        /* Статусы автопроверки */
+        .match-yes { color: #2e7d32; font-weight: bold; }
+        .match-no { color: #c62828; font-weight: bold; }
+        .field-status { font-size: 0.8rem; margin-left: 5px; color: #666; }
+
+        /* Модальное окно */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1rem;
+        }
+
+        .modal-content {
+            background-color: white;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            animation: modalFadeIn 0.3s ease;
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .modal-header h3 { margin: 0; font-size: 1.2rem; color: #333; }
+
+        .modal-close {
+            background: none; border: none; font-size: 1.5rem;
+            color: #666; cursor: pointer; line-height: 1;
+        }
+        .modal-close:hover { color: #333; }
+
+        .modal-body { padding: 1.5rem; }
+
+        .field-info {
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .field-info p { margin: 0.5rem 0; font-size: 0.95rem; }
+        .field-info strong { color: #666; min-width: 100px; display: inline-block; }
+
+        .modal-textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        .modal-textarea:focus { outline: none; border-color: #1976d2; }
+
+        .modal-footer {
+            padding: 1.5rem;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+
+        .btn-modal-cancel {
+            background-color: #f5f5f5; color: #333; border: 1px solid #ddd;
+            padding: 0.6rem 1.5rem; border-radius: 4px; cursor: pointer;
+        }
+        .btn-modal-cancel:hover { background-color: #e0e0e0; }
+
+        .btn-modal-save {
+            background-color: #1976d2; color: white; border: none;
+            padding: 0.6rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: 500;
+        }
+        .btn-modal-save:hover { background-color: #1565c0; }
+
+        .hidden { display: none !important; }
+        .loading-state { text-align: center; padding: 3rem; }
+        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #1976d2; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
 </head>
 <body>
     <div class="page-wrapper">
@@ -25,7 +316,7 @@
             </div>
 
             <!-- Сообщение об ошибке -->
-            <div id="error-message" class="error-message hidden"></div>
+            <div id="error-message" class="error-message hidden" style="background:#fee; border:1px solid #fcc; color:#c33; padding:1rem; border-radius:4px; margin-bottom:1rem;"></div>
 
             <!-- Таблица результатов -->
             <div id="results-section" class="hidden">
@@ -37,14 +328,14 @@
                                 <th>В Техническом задании</th>
                                 <th>В паспорте</th>
                                 <th>Цитата в документе</th>
-                                <th>Автоматическая проверка на соответствие</th>
-                                <th>Ручная проверка (верно/не верно)</th>
-                                <th>Комментарий специалиста</th>
+                                <th>Автоматическая проверка</th>
+                                <th>Ручная проверка</th>
+                                <th>Комментарий</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody id="results-tbody">
-                            <!-- Строки будут добавлены через JS -->
+                            <!-- Строки добавляются JS -->
                         </tbody>
                     </table>
                 </div>
@@ -52,6 +343,321 @@
         </div>
     </div>
 
-    <script src="/static/js/result.js"></script>
+    <!-- Модальное окно -->
+    <div id="comment-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Комментарий специалиста</h3>
+                <button class="modal-close" onclick="closeCommentModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="field-info">
+                    <p><strong>Характеристика:</strong> <span id="modal-field-name"></span></p>
+                    <p><strong>ТЗ:</strong> <span id="modal-tz-value"></span></p>
+                    <p><strong>Паспорт:</strong> <span id="modal-passport-value"></span></p>
+                </div>
+                <textarea id="modal-comment-textarea" class="modal-textarea" placeholder="Введите комментарий..." rows="6"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-modal-cancel" onclick="closeCommentModal()">Отмена</button>
+                <button class="btn-modal-save" onclick="saveCommentFromModal()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const analysisId = window.location.pathname.split('/').pop();
+
+        let analysisData = null;
+        let fieldVerifications = {};
+        let currentEditingFieldKey = null; // Для модального окна
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await loadAnalysisData();
+                renderPage();
+            } catch (err) {
+                console.error('Ошибка инициализации страницы:', err);
+                showError('Ошибка загрузки данных анализа');
+            }
+        });
+
+        async function loadAnalysisData() {
+            const response = await fetch(`/api/analysis/${analysisId}`, {
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || 'Ошибка загрузки анализа');
+            }
+
+            analysisData = data.analysis;
+            fieldVerifications = {};
+
+            for (const f of data.fields) {
+                fieldVerifications[f.field_key] = f;
+            }
+        }
+
+        function renderPage() {
+            renderAnalysisInfo();
+            renderResultsTable();
+
+            document.getElementById('loading')?.classList.add('hidden');
+            document.getElementById('results-section')?.classList.remove('hidden');
+        }
+
+        function renderAnalysisInfo() {
+            const infoDiv = document.getElementById('analysis-info');
+
+            const statusMap = {
+                pending: 'Ожидает обработки',
+                processing: 'В обработке',
+                completed: 'Завершено',
+                failed: 'Ошибка'
+            };
+
+            infoDiv.innerHTML = `
+                <h2 style="margin-top:0; font-size:1.4rem; color:#333;">Анализ #${analysisData.id}</h2>
+                <div class="info-grid">
+                    <div><strong>ТЗ:</strong> ${escapeHtml(analysisData.tz_filename)}</div>
+                    <div><strong>Паспорт:</strong> ${escapeHtml(analysisData.passport_filename)}</div>
+                    <div>
+                        <strong>Статус:</strong>
+                        <span class="status-${analysisData.status}">
+                            ${statusMap[analysisData.status] || analysisData.status}
+                        </span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderResultsTable() {
+            const tbody = document.getElementById('results-tbody');
+            tbody.innerHTML = '';
+
+            const keys = Object.keys(fieldVerifications);
+
+            if (keys.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:2rem;">Нет данных для отображения</td></tr>';
+                return;
+            }
+
+            keys.forEach((fieldKey) => {
+                const row = createResultRow(fieldKey);
+                tbody.appendChild(row);
+            });
+        }
+
+        function createResultRow(fieldKey) {
+            const fv = fieldVerifications[fieldKey];
+            const safeKey = fieldKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+            const row = document.createElement('tr');
+
+            const matchText = fv.auto_match ? 'Совпадает' : 'Не совпадает';
+            const matchClass = fv.auto_match ? 'match-yes' : 'match-no';
+
+            // Логика кнопки комментария (синяя если есть текст)
+            const hasCommentClass = fv.specialist_comment ? 'has-comment' : '';
+            const commentBtnText = fv.specialist_comment ? 'Изменить' : 'Комментарий';
+
+            row.innerHTML = `
+                <td><strong>${escapeHtml(fieldKey)}</strong></td>
+                <td>${formatValue(fv.tz_value)}</td>
+                <td>${formatValue(fv.passport_value)}</td>
+                <td class="cell-quote">${formatValue(fv.quote)}</td>
+                <td class="${matchClass}">${matchText}</td>
+                <td>
+                    <div class="radio-group">
+                        <label title="Верно"><input type="radio" name="verify_${safeKey}" value="true"
+                            ${fv.manual_verification === true ? 'checked' : ''}> ✓</label>
+                        <label title="Не верно"><input type="radio" name="verify_${safeKey}" value="false"
+                            ${fv.manual_verification === false ? 'checked' : ''}> ✗</label>
+                        <label title="Не выбрано"><input type="radio" name="verify_${safeKey}" value=""
+                            ${fv.manual_verification == null ? 'checked' : ''}> —</label>
+                    </div>
+                </td>
+                <td>
+                    <!-- Кнопка вместо textarea -->
+                    <button id="btn-comment-${safeKey}" class="btn-comment ${hasCommentClass}" onclick="openCommentModal('${fieldKey}')">
+                        ${commentBtnText}
+                    </button>
+                </td>
+                <td>
+                    <button id="save-${safeKey}" class="btn-save" disabled>Сохранить</button>
+                    <span id="status-${safeKey}" class="field-status"></span>
+                </td>
+            `;
+
+            const radios = row.querySelectorAll(`input[name="verify_${safeKey}"]`);
+            const saveBtn = row.querySelector(`#save-${safeKey}`);
+
+            // Если меняется радио - активируем кнопку "Сохранить"
+            [...radios].forEach(el => {
+                el.addEventListener('change', () => {
+                    saveBtn.disabled = false;
+                    saveBtn.style.backgroundColor = '#ff9800'; // Оранжевый "Нужно сохранить"
+                });
+            });
+
+            saveBtn.addEventListener('click', () => {
+                saveFieldVerification(fieldKey);
+            });
+
+            return row;
+        }
+
+        async function saveFieldVerification(fieldKey) {
+            const fv = fieldVerifications[fieldKey];
+            const safeKey = fieldKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+            const radios = document.getElementsByName(`verify_${safeKey}`);
+            let manual = null;
+
+            for (const r of radios) {
+                if (r.checked) {
+                    manual = r.value === '' ? null : r.value === 'true';
+                }
+            }
+
+            // Берем комментарий из памяти (fieldVerifications), который мы могли изменить через модалку
+            const comment = fv.specialist_comment || '';
+
+            const statusSpan = document.getElementById(`status-${safeKey}`);
+            const saveBtn = document.getElementById(`save-${safeKey}`);
+
+            statusSpan.textContent = '...';
+
+            const payload = {
+                field_key: fieldKey,
+                tz_value: fv.tz_value ?? '',
+                passport_value: fv.passport_value ?? '',
+                quote: fv.quote ?? '',
+                auto_match: fv.auto_match ?? null,
+                manual_verification: manual,
+                specialist_comment: comment || null
+            };
+
+            try {
+                const res = await fetch(`/api/analysis/${analysisId}/field-verification`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                // Обновляем локальные данные свежим ответом сервера
+                fieldVerifications[fieldKey] = data.field_verification;
+
+                statusSpan.textContent = '✓';
+                saveBtn.disabled = true;
+                saveBtn.style.backgroundColor = '#ccc'; // Серый (сохранено)
+
+                setTimeout(() => (statusSpan.textContent = ''), 2000);
+            } catch (err) {
+                console.error(err);
+                statusSpan.textContent = 'Ошибка';
+                saveBtn.disabled = false;
+                saveBtn.style.backgroundColor = '#f44336'; // Красный (ошибка)
+            }
+        }
+
+        // --- ФУНКЦИИ МОДАЛЬНОГО ОКНА ---
+
+        function openCommentModal(fieldKey) {
+            currentEditingFieldKey = fieldKey;
+            const fv = fieldVerifications[fieldKey];
+
+            if (!fv) return;
+
+            // Заполняем данные
+            document.getElementById('modal-field-name').textContent = fieldKey;
+            document.getElementById('modal-tz-value').textContent = fv.tz_value || 'N/A';
+            document.getElementById('modal-passport-value').textContent = fv.passport_value || 'N/A';
+            document.getElementById('modal-comment-textarea').value = fv.specialist_comment || '';
+
+            // Показываем окно
+            document.getElementById('comment-modal').classList.remove('hidden');
+        }
+
+        function closeCommentModal() {
+            document.getElementById('comment-modal').classList.add('hidden');
+            currentEditingFieldKey = null;
+        }
+
+        function saveCommentFromModal() {
+            if (!currentEditingFieldKey) return;
+
+            const textarea = document.getElementById('modal-comment-textarea');
+            const newComment = textarea.value.trim();
+            const safeKey = currentEditingFieldKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+            // 1. Обновляем данные в памяти
+            fieldVerifications[currentEditingFieldKey].specialist_comment = newComment;
+
+            // 2. Обновляем кнопку в таблице без полной перерисовки
+            const btn = document.getElementById(`btn-comment-${safeKey}`);
+            const saveRowBtn = document.getElementById(`save-${safeKey}`);
+
+            if (newComment) {
+                btn.innerHTML = 'Изменить';
+                btn.classList.add('has-comment');
+            } else {
+                btn.innerHTML = 'Комментарий';
+                btn.classList.remove('has-comment');
+            }
+
+            // 3. Активируем кнопку "Сохранить" в таблице, чтобы отправить изменения на сервер
+            saveRowBtn.disabled = false;
+            saveRowBtn.style.backgroundColor = '#ff9800';
+
+            closeCommentModal();
+        }
+
+        // Закрытие по клику на фон
+        document.getElementById('comment-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeCommentModal();
+            }
+        });
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            document.getElementById('loading')?.classList.add('hidden');
+        }
+
+        function escapeHtml(value) {
+            if (!value) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function formatValue(value) {
+            if (!value) return '<span style="color:#999">N/A</span>';
+            return escapeHtml(value);
+        }
+    </script>
 </body>
 </html>

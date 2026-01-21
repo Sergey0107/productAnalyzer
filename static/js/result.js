@@ -173,7 +173,7 @@ async function saveFieldVerification(fieldKey, index) {
     try {
         const res = await fetch(`/api/analysis/${analysisId}/field-verification`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             credentials: 'include',
             body: JSON.stringify(payload)
         });
@@ -201,7 +201,7 @@ function showError(message) {
     const errorDiv = document.getElementById('error-message');
     errorDiv.textContent = message;
     errorDiv.classList.remove('hidden');
-    
+
     document.getElementById('loading')?.classList.add('hidden');
 }
 
@@ -223,7 +223,7 @@ function formatValue(value) {
 async function saveGeneralComment() {
     const comment = document.getElementById('general-comment').value.trim();
     const radios = document.getElementsByName('general-verification');
-    
+
     let verification = null;
     for (const r of radios) {
         if (r.checked) {
@@ -252,4 +252,136 @@ async function saveGeneralComment() {
         console.error(err);
         alert('Ошибка сохранения комментария');
     }
+}
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+    // Имитация загрузки данных
+    setTimeout(() => {
+        initPage();
+    }, 500);
+});
+
+    function initPage() {
+    // Скрываем лоадер, показываем таблицу
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('results-section').classList.remove('hidden');
+
+    renderTable(tableData);
+}
+
+    function renderTable(data) {
+    const tbody = document.getElementById('results-tbody');
+    tbody.innerHTML = '';
+
+    data.forEach(item => {
+    const tr = document.createElement('tr');
+
+    // Определяем статус автопроверки
+    let statusHtml = '';
+    if (item.autoCheck === 'match') statusHtml = '<span class="status-match">Совпадает</span>';
+    else if (item.autoCheck === 'mismatch') statusHtml = '<span class="status-mismatch">Расхождение</span>';
+    else statusHtml = '<span class="status-missing">Нет данных</span>';
+
+    // Логика кнопки комментария
+    // Если комментарий есть, кнопка становится синей (has-comment)
+    const commentClass = item.comment ? 'has-comment' : '';
+    const commentText = item.comment ? 'Изменить' : 'Комментарий';
+
+    tr.innerHTML = `
+                    <td><strong>${item.name}</strong></td>
+                    <td>${item.tz}</td>
+                    <td>${item.passport}</td>
+                    <td class="cell-quote">"${item.quote}"</td>
+                    <td>${statusHtml}</td>
+                    <td>
+                        <select class="manual-check-select">
+                            <option value="">Не выбрано</option>
+                            <option value="ok">Верно</option>
+                            <option value="fail">Не верно</option>
+                        </select>
+                    </td>
+                    <td>
+                        <button class="btn-comment ${commentClass}" onclick="openCommentModal(${item.id})">
+                            ${commentText}
+                        </button>
+                    </td>
+                    <td>
+                        <div class="action-cell">
+                            <button class="btn-save-field" onclick="saveRow(${item.id})">
+                                Сохранить
+                            </button>
+                        </div>
+                    </td>
+                `;
+    tbody.appendChild(tr);
+});
+}
+
+    // --- ФУНКЦИИ МОДАЛЬНОГО ОКНА ---
+
+    function openCommentModal(id) {
+    currentEditingId = id;
+
+    // Находим данные строки
+    const item = tableData.find(row => row.id === id);
+    if (!item) return;
+
+    // Заполняем поля в модалке
+    document.getElementById('modal-field-name').textContent = item.name;
+    document.getElementById('modal-tz-value').textContent = item.tz;
+    document.getElementById('modal-passport-value').textContent = item.passport;
+    document.getElementById('modal-comment-textarea').value = item.comment || '';
+
+    // Показываем окно
+    document.getElementById('comment-modal').classList.remove('hidden');
+}
+
+    function closeCommentModal() {
+    document.getElementById('comment-modal').classList.add('hidden');
+    currentEditingId = null;
+}
+
+    function saveComment() {
+    if (!currentEditingId) return;
+
+    // Получаем текст из textarea
+    const newComment = document.getElementById('modal-comment-textarea').value.trim();
+
+    // Обновляем данные в памяти (в твоем проекте тут может быть отправка на сервер)
+    const item = tableData.find(row => row.id === currentEditingId);
+    if (item) {
+    item.comment = newComment;
+}
+
+    // Перерисовываем таблицу, чтобы кнопка обновилась (стала синей, если есть текст)
+    renderTable(tableData);
+
+    // Закрываем окно
+    closeCommentModal();
+}
+
+    // Закрытие по клику на темный фон
+    document.getElementById('comment-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+    closeCommentModal();
+}
+});
+
+    // --- ФУНКЦИЯ ДЛЯ КНОПКИ "СОХРАНИТЬ" В ТАБЛИЦЕ ---
+    function saveRow(id) {
+    const item = tableData.find(row => row.id === id);
+    console.log("Сохранение строки ID:", id, item);
+
+    // Визуальный эффект нажатия
+    const btn = event.target.closest('button'); // Находим кнопку, так как внутри может быть текст
+    const originalText = btn.textContent;
+
+    btn.textContent = "Готово!";
+    btn.style.backgroundColor = "#2e7d32"; // Темно-зеленый
+
+    setTimeout(() => {
+    btn.textContent = originalText;
+    btn.style.backgroundColor = "";
+}, 1000);
 }
