@@ -131,49 +131,6 @@ def create_tables():
         return False
 
 
-def seed_database():
-    """Создает тестовые данные (опционально)"""
-
-    db_user = os.getenv("POSTGRES_USER", "postgres")
-    db_password = os.getenv("POSTGRES_PASSWORD", "password")
-    db_host = get_postgres_host()
-    db_port = os.getenv("POSTGRES_PORT", "5432")
-    db_name = os.getenv("POSTGRES_DB", "product_analyze")
-
-    database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-    engine = create_engine(database_url)
-
-    from sqlalchemy.orm import sessionmaker
-    from db.security import get_password_hash
-
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = SessionLocal()
-
-    try:
-        # Проверяем, есть ли уже пользователи
-        existing_user = db.query(User).filter(User.username == "admin").first()
-        if not existing_user:
-            # Создаем тестового пользователя
-            admin_user = User(
-                username="admin",
-                email="admin@example.com",
-                password_hash=get_password_hash("admin123")
-            )
-            db.add(admin_user)
-            db.commit()
-            print("✅ Тестовый пользователь создан:")
-            print(f"   Логин: admin")
-            print(f"   Пароль: admin123")
-        else:
-            print("ℹ️  Пользователь 'admin' уже существует")
-
-    except Exception as e:
-        print(f"❌ Ошибка при создании тестовых данных: {e}")
-        db.rollback()
-    finally:
-        db.close()
-
-
 if __name__ == "__main__":
     print("=" * 60)
     print("🚀 МИГРАЦИЯ БАЗЫ ДАННЫХ")
@@ -189,18 +146,7 @@ if __name__ == "__main__":
     # Обработка аргументов командной строки
     if len(sys.argv) > 1:
         command = sys.argv[1]
-
-        if command == "init":
-            print("\n🔧 Инициализация базы данных...")
-            if create_database():
-                create_tables()
-                seed_database()
-
-        elif command == "seed":
-            print("\n🌱 Создание тестовых данных...")
-            seed_database()
-
-        elif command == "create-db":
+        if command == "create-db":
             print("\n📦 Создание базы данных...")
             create_database()
 
