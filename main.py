@@ -13,14 +13,11 @@ from datetime import datetime
 from handlers.file_handler import FileHandler
 from config import settings
 from utils.json_flattener import flatten_json
-from db.database import engine, Base
-from db.database import SessionLocal
-from models.models import User, Analysis, AnalysisStatus
+from db.database import engine, Base, SessionLocal
+from models.models import User, Analysis, AnalysisStatus, FieldVerification
 from db.security import verify_password
-from models.models import FieldVerification
 from pydantic import BaseModel
 
-# Импорт Celery
 from celery_app import celery_app
 from tasks.analysis_task import process_analysis_task
 
@@ -29,16 +26,11 @@ app = FastAPI(
     description="API для анализа соответствия изделий техническим требованиям",
 )
 
-# ============================================================================
-# НАСТРОЙКА АВТОРИЗАЦИИ И СЕССИЙ
-# ============================================================================
-
 sessions = {}
 SESSION_TIMEOUT = 24 * 3600
 
 
 def get_db():
-    """Зависимость для получения сессии базы данных"""
     db = SessionLocal()
     try:
         yield db
@@ -47,7 +39,6 @@ def get_db():
 
 
 def get_current_user(request: Request, db=None):
-    """Получение текущего пользователя из сессии"""
     if db is None:
         db = SessionLocal()
         try:
@@ -85,13 +76,8 @@ def get_current_user(request: Request, db=None):
     return user
 
 
-# ============================================================================
-# MIDDLEWARE ДЛЯ ПРОВЕРКИ АВТОРИЗАЦИИ
-# ============================================================================
-
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """Middleware для проверки авторизации"""
     public_paths = ["/login", "/static", "/favicon.ico", "/api/login"]
 
     is_api_request = request.url.path.startswith("/api/") and request.url.path != "/api/login"
@@ -102,11 +88,10 @@ async def auth_middleware(request: Request, call_next):
         try:
             user = get_current_user(request, db)
             if not user:
-                response = JSONResponse(
+                return JSONResponse(
                     status_code=401,
                     content={"success": False, "error": "Требуется авторизация"}
                 )
-                return response
         finally:
             db.close()
 
@@ -128,13 +113,8 @@ async def auth_middleware(request: Request, call_next):
     return response
 
 
-# ============================================================================
-# ОСНОВНЫЕ МАРШРУТЫ
-# ============================================================================
-
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Главная страница - дашборд с анализами"""
     db = SessionLocal()
     try:
         user = get_current_user(request, db)
@@ -149,7 +129,6 @@ async def dashboard(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    """Страница авторизации"""
     db = SessionLocal()
     try:
         user = get_current_user(request, db)
@@ -164,7 +143,6 @@ async def login_page(request: Request):
 
 @app.get("/new-analysis", response_class=HTMLResponse)
 async def new_analysis_page(request: Request):
-    """Страница создания нового анализа"""
     db = SessionLocal()
     try:
         user = get_current_user(request, db)
@@ -179,7 +157,6 @@ async def new_analysis_page(request: Request):
 
 @app.get("/analysis/{analysis_id}", response_class=HTMLResponse)
 async def analysis_result_page(request: Request, analysis_id: int):
-    """Страница результата анализа"""
     db = SessionLocal()
     try:
         user = get_current_user(request, db)
@@ -208,7 +185,6 @@ async def api_login(
         password: str = Form(...),
         db=Depends(get_db)
 ):
-    """API для авторизации"""
     user = db.query(User).filter(User.username == username).first()
 
     if not user or not verify_password(password, user.password_hash):
@@ -251,7 +227,6 @@ async def api_login(
 
 @app.get("/api/logout")
 async def api_logout(request: Request):
-    """API для выхода из системы"""
     user_id = request.cookies.get("user_id")
 
     if user_id and user_id in sessions:
@@ -268,7 +243,6 @@ async def api_logout(request: Request):
 
 @app.get("/api/check-auth")
 async def check_auth(request: Request, db=Depends(get_db)):
-    """Проверка статуса авторизации"""
     user = get_current_user(request, db)
     if user:
         return JSONResponse(
@@ -288,13 +262,8 @@ async def check_auth(request: Request, db=Depends(get_db)):
         )
 
 
-# ============================================================================
-# API - УПРАВЛЕНИЕ АНАЛИЗАМИ (ОБНОВЛЕНО С CELERY)
-# ============================================================================
-
 @app.get("/api/analyses")
 async def get_analyses(request: Request, db=Depends(get_db)):
-    """Получить список всех анализов пользователя"""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -325,9 +294,9 @@ async def get_analyses(request: Request, db=Depends(get_db)):
 
 @app.get("/api/analysis/{analysis_id}")
 async def get_analysis(
-    analysis_id: int,
-    request: Request,
-    db=Depends(get_db)
+        analysis_id: int,
+        request: Request,
+        db=Depends(get_db)
 ):
     user = get_current_user(request, db)
     if not user:
@@ -391,7 +360,6 @@ async def create_analysis(
         comparison_mode: str = Form("flexible"),
         db=Depends(get_db)
 ):
-    """Создать новый анализ (с Celery)"""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -399,7 +367,6 @@ async def create_analysis(
             content={"success": False, "error": "Требуется авторизация"}
         )
 
-    # Валидация файлов
     try:
         file_handler = FileHandler()
         file_handler.validate_file(tz_file)
@@ -410,7 +377,6 @@ async def create_analysis(
             content={"success": False, "error": str(e)}
         )
 
-    # Создаем запись в БД
     analysis = Analysis(
         user_id=user.id,
         tz_filename=tz_file.filename,
@@ -423,7 +389,14 @@ async def create_analysis(
     db.commit()
     db.refresh(analysis)
 
-    # Сохраняем файлы во временную папку
+    print(f"✅ Анализ создан в БД: ID={analysis.id}, user_id={analysis.user_id}")
+
+    check = db.query(Analysis).filter(Analysis.id == analysis.id).first()
+    if check:
+        print(f"✅ Проверка: анализ {analysis.id} найден в БД")
+    else:
+        print(f"❌ ОШИБКА: анализ {analysis.id} НЕ найден в БД после commit!")
+
     tz_filename = f"tz_{analysis.id}_{tz_file.filename}"
     passport_filename = f"passport_{analysis.id}_{passport_file.filename}"
 
@@ -434,15 +407,10 @@ async def create_analysis(
     file_handler.save_upload_file(tz_file, tz_path)
     file_handler.save_upload_file(passport_file, passport_path)
 
-    # Запускаем Celery задачу
     task = process_analysis_task.apply_async(
         args=[analysis.id, str(tz_path), str(passport_path), comparison_mode],
         task_id=f"analysis_{analysis.id}"
     )
-
-    # Сохраняем task_id в БД (если добавите поле celery_task_id в модель)
-    # analysis.celery_task_id = task.id
-    # db.commit()
 
     return JSONResponse(content={
         "success": True,
@@ -458,7 +426,6 @@ async def get_analysis_task_status(
         analysis_id: int,
         db=Depends(get_db)
 ):
-    """Получить статус Celery задачи для анализа"""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -477,7 +444,6 @@ async def get_analysis_task_status(
             content={"success": False, "error": "Анализ не найден"}
         )
 
-    # Получаем статус задачи из Celery
     task_id = f"analysis_{analysis_id}"
     task_result = celery_app.AsyncResult(task_id)
 
@@ -491,114 +457,8 @@ async def get_analysis_task_status(
     })
 
 
-@app.post("/api/analysis/{analysis_id}/generate-field-verifications")
-async def generate_field_verifications(
-        request: Request,
-        analysis_id: int,
-        db=Depends(get_db)
-):
-    """Сгенерировать записи field_verifications из результатов анализа"""
-    user = get_current_user(request, db)
-    if not user:
-        return JSONResponse(
-            status_code=401,
-            content={"success": False, "error": "Требуется авторизация"}
-        )
-
-    analysis = db.query(Analysis).filter(
-        Analysis.id == analysis_id,
-        Analysis.user_id == user.id
-    ).first()
-
-    if not analysis:
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "error": "Анализ не найден"}
-        )
-
-    if not analysis.comparison_result:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "error": "Нет результатов сравнения"}
-        )
-
-    try:
-        from tasks.analysis_task import create_field_verifications_from_result
-
-        db.query(FieldVerification).filter(
-            FieldVerification.analysis_id == analysis_id
-        ).delete()
-
-        comparison_data = json.loads(analysis.comparison_result)
-        create_field_verifications_from_result(analysis_id, comparison_data, db)
-
-        db.commit()
-
-        count = db.query(FieldVerification).filter(
-            FieldVerification.analysis_id == analysis_id
-        ).count()
-
-        return JSONResponse(content={
-            "success": True,
-            "message": f"Создано {count} записей в field_verifications",
-            "count": count
-        })
-
-    except Exception as e:
-        db.rollback()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": f"Ошибка создания записей: {str(e)}"}
-        )
-
-
-@app.patch("/api/analysis/{analysis_id}")
-async def update_analysis(
-        request: Request,
-        analysis_id: int,
-        manual_verification: Optional[bool] = Form(None),
-        comment: Optional[str] = Form(None),
-        db=Depends(get_db)
-):
-    """Обновить комментарий и ручную проверку анализа"""
-    user = get_current_user(request, db)
-    if not user:
-        return JSONResponse(
-            status_code=401,
-            content={"success": False, "error": "Требуется авторизация"}
-        )
-
-    analysis = db.query(Analysis).filter(
-        Analysis.id == analysis_id,
-        Analysis.user_id == user.id
-    ).first()
-
-    if not analysis:
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "error": "Анализ не найден"}
-        )
-
-    if manual_verification is not None:
-        analysis.manual_verification = manual_verification
-
-    if comment is not None:
-        analysis.comment = comment
-
-    analysis.updated_at = datetime.utcnow()
-    db.commit()
-
-    return JSONResponse(content={
-        "success": True,
-        "message": "Анализ обновлен",
-        "manual_verification": analysis.manual_verification,
-        "comment": analysis.comment
-    })
-
-
 @app.delete("/api/analysis/{analysis_id}")
 async def delete_analysis(request: Request, analysis_id: int, db=Depends(get_db)):
-    """Удалить анализ"""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -643,7 +503,6 @@ async def update_field_verification(
         data: FieldVerificationUpdate,
         db=Depends(get_db)
 ):
-    """Обновить или создать ручную проверку для конкретного поля"""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -716,12 +575,10 @@ async def update_field_verification(
 
 @app.get("/api/analysis/{analysis_id}/field-verifications")
 async def get_field_verifications(
-    request: Request,
-    analysis_id: int,
-    db=Depends(get_db)
+        request: Request,
+        analysis_id: int,
+        db=Depends(get_db)
 ):
-    """Получить все проверки полей для анализа"""
-
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -773,89 +630,8 @@ async def get_field_verifications(
     }
 
 
-@app.post("/api/analysis/{analysis_id}/save-all-fields")
-async def save_all_field_verifications(
-        request: Request,
-        analysis_id: int,
-        db=Depends(get_db)
-):
-    """Сохранить все поля из результатов сравнения в таблицу field_verifications"""
-    user = get_current_user(request, db)
-    if not user:
-        return JSONResponse(
-            status_code=401,
-            content={"success": False, "error": "Требуется авторизация"}
-        )
-
-    analysis = db.query(Analysis).filter(
-        Analysis.id == analysis_id,
-        Analysis.user_id == user.id
-    ).first()
-
-    if not analysis:
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "error": "Анализ не найден"}
-        )
-
-    if not analysis.comparison_result:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "error": "Нет результатов сравнения"}
-        )
-
-    try:
-        comparison_data = json.loads(analysis.comparison_result)
-        comparisons = comparison_data.get("comparisons", [])
-
-        saved_count = 0
-
-        for item in comparisons:
-            field_key = item.get("key", "")
-            if not field_key:
-                continue
-
-            existing = db.query(FieldVerification).filter(
-                FieldVerification.analysis_id == analysis_id,
-                FieldVerification.field_key == field_key
-            ).first()
-
-            if not existing:
-                field_verification = FieldVerification(
-                    analysis_id=analysis_id,
-                    field_key=field_key,
-                    tz_value=str(item.get("tz_value", "")),
-                    passport_value=str(item.get("passport_value", "")),
-                    quote=item.get("quote", ""),
-                    auto_match=item.get("match", None)
-                )
-                db.add(field_verification)
-                saved_count += 1
-
-        db.commit()
-
-        return JSONResponse(content={
-            "success": True,
-            "message": f"Сохранено {saved_count} полей",
-            "saved_count": saved_count
-        })
-
-    except Exception as e:
-        db.rollback()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": f"Ошибка сохранения: {str(e)}"}
-        )
-
-
-# ============================================================================
-# ДОПОЛНИТЕЛЬНЫЕ СЕРВИСНЫЕ ЭНДПОИНТЫ
-# ============================================================================
-
 @app.get("/health")
 async def health_check():
-    """Проверка работоспособности сервера"""
-    # Проверяем подключение к Redis/Celery
     try:
         celery_inspect = celery_app.control.inspect()
         active_workers = celery_inspect.active()
@@ -872,7 +648,6 @@ async def health_check():
 
 @app.get("/api/user")
 async def get_current_user_info(request: Request, db=Depends(get_db)):
-    """Получение информации о текущем пользователе"""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse(
@@ -888,10 +663,6 @@ async def get_current_user_info(request: Request, db=Depends(get_db)):
     })
 
 
-# ============================================================================
-# НАСТРОЙКА CORS И СТАТИЧЕСКИХ ФАЙЛОВ
-# ============================================================================
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -901,10 +672,6 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# ============================================================================
-# ЗАПУСК ПРИЛОЖЕНИЯ
-# ============================================================================
 
 if __name__ == "__main__":
     import uvicorn

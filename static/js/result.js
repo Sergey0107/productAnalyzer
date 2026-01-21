@@ -1,17 +1,7 @@
-// ============================================================================
-// ANALYSIS RESULT PAGE SCRIPT (FIXED)
-// ============================================================================
-
-// Получаем ID анализа из URL
 const analysisId = window.location.pathname.split('/').pop();
 
-// Глобальные данные
 let analysisData = null;
 let fieldVerifications = {};
-
-// ----------------------------------------------------------------------------
-// INIT
-// ----------------------------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -19,13 +9,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderPage();
     } catch (err) {
         console.error('Ошибка инициализации страницы:', err);
-        alert('Ошибка загрузки данных анализа');
+        showError('Ошибка загрузки данных анализа');
     }
 });
-
-// ----------------------------------------------------------------------------
-// LOAD DATA
-// ----------------------------------------------------------------------------
 
 async function loadAnalysisData() {
     const response = await fetch(`/api/analysis/${analysisId}`, {
@@ -53,10 +39,6 @@ async function loadAnalysisData() {
         fieldVerifications[f.field_key] = f;
     }
 }
-
-// ----------------------------------------------------------------------------
-// RENDER
-// ----------------------------------------------------------------------------
 
 function renderPage() {
     renderAnalysisInfo();
@@ -98,7 +80,7 @@ function renderResultsTable() {
     const keys = Object.keys(fieldVerifications);
 
     if (keys.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8">Нет данных</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8">Нет данных для отображения</td></tr>';
         return;
     }
 
@@ -107,10 +89,6 @@ function renderResultsTable() {
         tbody.appendChild(row);
     });
 }
-
-// ----------------------------------------------------------------------------
-// ROW
-// ----------------------------------------------------------------------------
 
 function createResultRow(fieldKey, index) {
     const fv = fieldVerifications[fieldKey];
@@ -162,10 +140,6 @@ function createResultRow(fieldKey, index) {
 
     return row;
 }
-
-// ----------------------------------------------------------------------------
-// SAVE
-// ----------------------------------------------------------------------------
 
 async function saveFieldVerification(fieldKey, index) {
     const fv = fieldVerifications[fieldKey];
@@ -223,9 +197,13 @@ async function saveFieldVerification(fieldKey, index) {
     }
 }
 
-// ----------------------------------------------------------------------------
-// UTILS
-// ----------------------------------------------------------------------------
+function showError(message) {
+    const errorDiv = document.getElementById('error-message');
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
+    
+    document.getElementById('loading')?.classList.add('hidden');
+}
 
 function escapeHtml(value) {
     if (!value) return '';
@@ -240,4 +218,38 @@ function escapeHtml(value) {
 function formatValue(value) {
     if (!value) return '<span style="color:#999">N/A</span>';
     return escapeHtml(value);
+}
+
+async function saveGeneralComment() {
+    const comment = document.getElementById('general-comment').value.trim();
+    const radios = document.getElementsByName('general-verification');
+    
+    let verification = null;
+    for (const r of radios) {
+        if (r.checked) {
+            verification = r.value === '' ? null : r.value === 'true';
+        }
+    }
+
+    try {
+        const formData = new FormData();
+        if (comment) formData.append('comment', comment);
+        if (verification !== null) formData.append('manual_verification', verification);
+
+        const res = await fetch(`/api/analysis/${analysisId}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            body: formData
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        alert('Общий комментарий сохранен');
+    } catch (err) {
+        console.error(err);
+        alert('Ошибка сохранения комментария');
+    }
 }

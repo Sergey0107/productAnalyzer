@@ -60,3 +60,5 @@ if settings.DEBUG:
     print(f"🌍 Environment: {settings.ENVIRONMENT}")
     print(f"🐛 Debug: {settings.DEBUG}")
     print("=" * 60)
+    print(f"🔍 DATABASE_URL: {settings.DATABASE_URL}")
+    print(f"🔍 CELERY_BROKER_URL: {settings.CELERY_BROKER_URL}")

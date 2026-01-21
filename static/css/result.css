@@ -2,6 +2,8 @@
 .page-wrapper {
     min-height: 100vh;
     background-color: #f5f5f5;
+    padding: 0;
+    margin: 0;
 }
 
 .page-header {
@@ -11,6 +13,9 @@
     display: flex;
     align-items: center;
     gap: 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
 .btn-back {
@@ -37,9 +42,11 @@
 }
 
 .container {
-    max-width: 1400px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
     padding: 2rem;
+    box-sizing: border-box;
 }
 
 /* Информационная секция */
@@ -49,22 +56,26 @@
     border-radius: 4px;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
 }
 
 .info-field {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0;
 }
 
 .info-label {
     color: #666;
     font-weight: 500;
-    min-width: 180px;
+    min-width: 150px;
 }
 
 .info-value {
     color: #333;
+    word-break: break-word;
 }
 
 /* Состояния загрузки и ошибки */
@@ -74,6 +85,7 @@
     background-color: white;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
+    margin: 2rem 0;
 }
 
 .spinner {
@@ -100,23 +112,29 @@
     margin-bottom: 1rem;
 }
 
-/* Таблица результатов */
+/* Таблица результатов - растягиваем на всю ширину */
 .table-wrapper {
     background-color: white;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
     overflow-x: auto;
     margin-bottom: 1.5rem;
+    width: 100%;
 }
 
 .results-table {
     width: 100%;
+    min-width: 100%;
     border-collapse: collapse;
     font-size: 0.9rem;
+    table-layout: fixed;
 }
 
 .results-table thead {
     background-color: #f8f9fa;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
 .results-table th {
@@ -126,12 +144,25 @@
     color: #333;
     border-bottom: 2px solid #e0e0e0;
     white-space: nowrap;
+    position: relative;
 }
+
+/* Ширины колонок */
+.results-table th:nth-child(1) { width: 15%; } /* Название хар-ки */
+.results-table th:nth-child(2) { width: 12%; } /* В ТЗ */
+.results-table th:nth-child(3) { width: 12%; } /* В паспорте */
+.results-table th:nth-child(4) { width: 18%; } /* Цитата */
+.results-table th:nth-child(5) { width: 12%; } /* Автопроверка */
+.results-table th:nth-child(6) { width: 10%; } /* Ручная проверка */
+.results-table th:nth-child(7) { width: 10%; } /* Комментарий */
+.results-table th:nth-child(8) { width: 11%; } /* Действия */
 
 .results-table td {
     padding: 1rem 0.75rem;
     border-bottom: 1px solid #e0e0e0;
     vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 .results-table tbody tr:last-child td {
@@ -142,19 +173,17 @@
     background-color: #f8f9fa;
 }
 
-/* Ячейки таблицы */
-.cell-tz {
-    max-width: 200px;
-}
-
-.cell-passport {
-    max-width: 150px;
+/* Стили для ячеек */
+.cell-tz, .cell-passport {
+    font-weight: 500;
 }
 
 .cell-quote {
-    max-width: 250px;
     font-size: 0.85rem;
     color: #555;
+    font-style: italic;
+    background-color: #fafafa;
+    border-radius: 3px;
 }
 
 .cell-auto-check {
@@ -163,16 +192,68 @@
 
 .cell-manual-check {
     text-align: center;
-    min-width: 120px;
 }
 
-.cell-comment {
-    min-width: 200px;
+/* Кнопка комментария */
+.btn-comment {
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    color: #666;
+    border-radius: 4px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    white-space: nowrap;
 }
 
-.cell-actions {
-    width: 50px;
-    text-align: center;
+.btn-comment:hover {
+    background-color: #e0e0e0;
+    color: #333;
+}
+
+.btn-comment.has-comment {
+    background-color: #e3f2fd;
+    border-color: #1976d2;
+    color: #1976d2;
+}
+
+/* Кнопка сохранения */
+.btn-save-field {
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.btn-save-field:hover {
+    background-color: #45a049;
+}
+
+/* Селект ручной проверки */
+.manual-check-select {
+    width: 100%;
+    padding: 0.4rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background-color: white;
+    cursor: pointer;
+}
+
+.manual-check-select:focus {
+    outline: none;
+    border-color: #1976d2;
 }
 
 /* Статусы автопроверки */
@@ -206,122 +287,145 @@
     font-weight: 500;
 }
 
-/* Радио кнопки в таблице */
-.radio-group-inline {
+/* Панель действий в строке */
+.action-cell {
     display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.5rem;
+    align-items: center;
 }
 
-.radio-label-inline {
+/* Модальное окно для комментария */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    cursor: pointer;
-    font-size: 0.85rem;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
 }
 
-.radio-label-inline input[type="radio"] {
-    cursor: pointer;
-}
-
-/* Поле комментария в таблице */
-.comment-input {
+.modal-content {
+    background-color: white;
+    border-radius: 8px;
     width: 100%;
-    min-height: 60px;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 3px;
-    font-family: inherit;
-    font-size: 0.85rem;
-    resize: vertical;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    animation: modalFadeIn 0.3s ease;
 }
 
-.comment-input:focus {
-    outline: none;
-    border-color: #1976d2;
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-/* Кнопка редактирования */
-.btn-edit {
-    background: none;
-    border: none;
-    cursor: pointer;
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h3 {
+    margin: 0;
     font-size: 1.2rem;
-    padding: 0.3rem;
-    color: #666;
-    transition: color 0.2s;
-}
-
-.btn-edit:hover {
     color: #333;
 }
 
-/* Панель общего комментария */
-.comment-panel {
-    background-color: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: #666;
+    cursor: pointer;
+    padding: 0.3rem;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    background-color: #f0f0f0;
+    color: #333;
+}
+
+.modal-body {
     padding: 1.5rem;
 }
 
-.comment-panel h3 {
-    margin: 0 0 1rem 0;
-    font-size: 1.1rem;
-    color: #333;
+.field-info {
+    background-color: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
 }
 
-.comment-textarea {
+.field-info p {
+    margin: 0.5rem 0;
+    font-size: 0.95rem;
+}
+
+.field-info strong {
+    color: #666;
+    min-width: 100px;
+    display: inline-block;
+}
+
+.modal-textarea {
     width: 100%;
     padding: 0.75rem;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     resize: vertical;
-    margin-bottom: 1rem;
+    box-sizing: border-box;
 }
 
-.comment-textarea:focus {
+.modal-textarea:focus {
     outline: none;
     border-color: #1976d2;
 }
 
-/* Панель верификации */
-.verification-panel {
-    margin-bottom: 1rem;
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
 }
 
-.verification-label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
+.btn-modal-cancel {
+    background-color: #f5f5f5;
     color: #333;
-}
-
-.radio-group {
-    display: flex;
-    gap: 1.5rem;
-}
-
-.radio-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    border: 1px solid #ddd;
+    padding: 0.6rem 1.5rem;
+    border-radius: 4px;
+    font-size: 0.95rem;
     cursor: pointer;
-    font-size: 0.9rem;
+    transition: background-color 0.2s;
 }
 
-.radio-label input[type="radio"] {
-    cursor: pointer;
+.btn-modal-cancel:hover {
+    background-color: #e0e0e0;
 }
 
-/* Кнопка сохранения */
-.btn-save {
-    background-color: #4caf50;
+.btn-modal-save {
+    background-color: #1976d2;
     color: white;
     border: none;
-    padding: 0.7rem 2rem;
+    padding: 0.6rem 1.5rem;
     border-radius: 4px;
     font-size: 0.95rem;
     cursor: pointer;
@@ -329,8 +433,37 @@
     transition: background-color 0.2s;
 }
 
-.btn-save:hover {
-    background-color: #45a049;
+.btn-modal-save:hover {
+    background-color: #1565c0;
+}
+
+/* Подсказка для кнопки комментария */
+.comment-tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.comment-tooltip .tooltip-text {
+    visibility: hidden;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    padding: 0.3rem 0.6rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.comment-tooltip:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
 }
 
 /* Утилиты */
@@ -340,6 +473,10 @@
 
 /* Адаптивность */
 @media (max-width: 1200px) {
+    .container {
+        padding: 1rem;
+    }
+
     .results-table {
         font-size: 0.85rem;
     }
@@ -350,16 +487,58 @@
     }
 }
 
+@media (max-width: 992px) {
+    .info-section {
+        grid-template-columns: 1fr;
+    }
+
+    .info-field {
+        flex-direction: column;
+        gap: 0.2rem;
+    }
+
+    .info-label {
+        min-width: auto;
+    }
+}
+
 @media (max-width: 768px) {
+    .page-header {
+        padding: 1rem;
+    }
+
     .container {
         padding: 1rem;
     }
 
     .table-wrapper {
-        overflow-x: scroll;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
     }
 
-    .results-table {
-        min-width: 1000px;
+    .action-cell {
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+
+    .btn-comment, .btn-save-field {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .modal-content {
+        margin: 1rem;
+        max-height: 80vh;
+    }
+}
+
+@media (max-width: 576px) {
+    .modal-footer {
+        flex-direction: column;
+    }
+
+    .btn-modal-cancel, .btn-modal-save {
+        width: 100%;
     }
 }
