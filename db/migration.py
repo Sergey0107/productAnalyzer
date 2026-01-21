@@ -89,7 +89,7 @@ def create_tables():
     """Создает все таблицы в базе данных"""
 
     db_user = os.getenv("POSTGRES_USER", "postgres")
-    db_password = os.getenv("POSTGRES_PASSWORD", "password")
+    db_password = os.getenv("POSTGRES_PASSWORD", "admin")
     db_host = get_postgres_host()  # Используем правильный хост
     db_port = os.getenv("POSTGRES_PORT", "5432")
     db_name = os.getenv("POSTGRES_DB", "product_analyze")
