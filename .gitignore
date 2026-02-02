@@ -34,9 +34,6 @@ ENV/
 *~
 .DS_Store
 
-# Environment variables
-.env
-
 # Uploads directory (временные файлы)
 uploads/*
 !uploads/.gitkeep
